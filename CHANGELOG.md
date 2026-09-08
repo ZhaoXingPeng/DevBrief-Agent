@@ -1,8 +1,7 @@
 # Changelog
 
-All notable, user-visible changes are recorded here. This repository starts as a
-Phase 1 Harness prototype; no real external integration is included.
+所有可感知的变化记录在此。本仓库从不含真实外部集成的 Phase 1 Harness 原型开始。
 
 ## Unreleased
 
-- Established the repository governance and product-contract baseline.
+- 建立仓库治理和产品契约基线。
