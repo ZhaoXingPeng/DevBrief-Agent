@@ -1,9 +1,7 @@
-# Security Policy
+# 安全策略
 
-Report a potential vulnerability privately to the repository owner. Do not open a
-public Issue containing credentials, private transcripts, raw trace data, or
-reproduction inputs that expose third-party data.
+发现潜在漏洞请私下联系仓库所有者。不要在公开 Issue 中提交凭据、私有转写、原始
+trace 或暴露第三方数据的复现输入。
 
-DevBrief's early phases run only deterministic fake adapters. A successful fake
-test does not prove a real provider, GitHub integration, or production deployment
-is safe or available.
+DevBrief 早期阶段只运行确定性的 fake Adapter。fake 测试成功不代表真实 Provider、
+GitHub 集成或生产部署已经可用或安全。
