@@ -184,6 +184,8 @@ Approval
   created_at
 ```
 
+审批校验返回 `ApprovalDecision`，包含 `allowed`、`approval_id`、`plan_hash`、当前审批 `status`、错误码和脱敏原因。校验除了比较 `plan_hash`，还必须比较请求的工具名与规范化参数是否等于 `Plan.tool_name` 和 `Plan.arguments`；任一字段变化都拒绝并要求重新批准。
+
 - `plan_hash` 绑定任务标题、正文、目标仓库、标签、负责人和工具参数；任何字段变化都使旧审批失效。
 - 一个 `approved` 审批只能消费一次；执行后状态变为 `consumed`。
 - 外部写请求必须带 `approval_id` 与 `idempotency_key`。写 Adapter 先校验审批状态、目标范围和 hash，再发起调用。
