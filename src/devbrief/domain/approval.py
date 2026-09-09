@@ -247,5 +247,8 @@ class ApprovalGate:
                     f"reason={redact_summary(decision.reason)}"
                 ),
                 error_code=decision.error_code,
+                plan_hash=decision.plan_hash,
+                tool_call_id=request.tool_call_id,
+                tool_name=request.tool_name,
             ),
         )

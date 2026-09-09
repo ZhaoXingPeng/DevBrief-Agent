@@ -102,11 +102,18 @@ TraceSpan
   output_summary
   elapsed_ms
   error_code
+  plan_hash (optional)
+  tool_call_id (optional)
+  tool_name (optional)
+  tool_decision (optional)
+  receipt_id (optional)
 ```
 
 - Checkpoint 只保存恢复所需的最小、脱敏数据；不保存 token、原始音频、完整私有转写或完整第三方正文。
 - `ToolReceipt` 写入成功或 `unknown_outcome` 前必须先于后续外部写形成 checkpoint。
 - Replayer 只能在 fake 或明确标记的 sandbox 环境运行；它按因果顺序比较状态、计划哈希、工具决策和回执引用，不能向真实系统重放副作用。
+
+回放结果使用 `TraceReplayReport`：包含 `replayable`、最终状态、状态序列、计划哈希、工具决策、回执引用和固定 mismatch code。报告不回显 trace 摘要正文；空 trace、重复 span、跨会话/trace 和状态不连续都必须显式标记。
 
 ## 5. DecisionCandidate
 
