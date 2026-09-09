@@ -73,10 +73,58 @@ class EvidenceKind(StrEnum):
     HUMAN_NOTE = "human_note"
 
 
+class ContextSourceKind(StrEnum):
+    SYSTEM_RULE = "system_rule"
+    USER_INPUT = "user_input"
+    TRANSCRIPT = "transcript"
+    REPOSITORY_EVIDENCE = "repository_evidence"
+    TOOL_RESULT = "tool_result"
+    HUMAN_NOTE = "human_note"
+
+
+class ContextTrustLevel(StrEnum):
+    TRUSTED_POLICY = "trusted_policy"
+    UNTRUSTED_DATA = "untrusted_data"
+
+
+class RedactionState(StrEnum):
+    REDACTED = "redacted"
+    UNREDACTED = "unredacted"
+    UNKNOWN = "unknown"
+
+
 class Evidence(StrictModel):
     kind: EvidenceKind
     reference: str = Field(min_length=1)
     quote: str | None = None
+
+
+class ContextSegment(StrictModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    source_kind: ContextSourceKind
+    trust_level: ContextTrustLevel
+    reference: str = Field(min_length=1)
+    token_estimate: int = Field(gt=0)
+    inclusion_reason: str = Field(min_length=1)
+    redaction_state: RedactionState
+
+    @property
+    def source_id(self) -> str:
+        """Compatibility name for application callers that use source identifiers."""
+        return self.id
+
+
+class ContextBuildMetadata(StrictModel):
+    max_tokens: int = Field(gt=0)
+    consumed_tokens: int = Field(ge=0)
+    included: list[ContextSegment] = Field(
+        default_factory=lambda: list[ContextSegment]()
+    )
+    excluded: list[ContextSegment] = Field(
+        default_factory=lambda: list[ContextSegment]()
+    )
+    truncated_count: int = Field(ge=0)
+    truncation_reasons: dict[str, str] = Field(default_factory=dict)
 
 
 class TranscriptSegment(StrictModel):
