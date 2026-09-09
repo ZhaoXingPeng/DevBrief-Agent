@@ -218,6 +218,10 @@ Approval
 `SimilarIssue[]`。相似项只允许提供相似度、理由和 `review_required=true`，不能被标记
 为确定重复，也不能触发关闭、修改或其他第三方副作用。草稿正文可包含候选的脱敏摘要
 和引用，但不得复制转写 quote 或完整外部正文。
+
+`BugTriageApplication` 当前只编排至 `awaiting_approval`，返回 `TriageRunResult`；
+它不会自动创建 Approval 或调用 external write。输入 fixture 只有在通过校验后才创建
+session，分析/规划校验错误会停止后续阶段并保留最后安全 checkpoint。
 - 一个 `approved` 审批只能消费一次；执行后状态变为 `consumed`。
 - 外部写请求必须带 `approval_id` 与 `idempotency_key`。写 Adapter 先校验审批状态、目标范围和 hash，再发起调用。
 - 必须写入 `ToolReceipt`，包含外部对象 ID/URL、provider 请求 ID（如有）、最终状态和时间。超时且未知是否成功时进入 `unknown_outcome`，先查询再决定是否重试。

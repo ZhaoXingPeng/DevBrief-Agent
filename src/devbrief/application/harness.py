@@ -198,6 +198,22 @@ class Harness:
             )
         self.traces.append(span)
 
+    def fail_terminal(self, session_id: str, reason: ErrorCode | str) -> Session:
+        """Stop a session after a non-recoverable validation or application failure."""
+        session = self.get_session(session_id)
+        if session.state.is_terminal:
+            return session
+        updated = replace(session, state=SessionState.FAILED_TERMINAL)
+        self._sessions[session_id] = updated
+        self._trace_state(
+            updated,
+            session.state,
+            SessionState.FAILED_TERMINAL,
+            output="application failure stopped execution",
+            error_code=reason,
+        )
+        return updated
+
     def cancel(self, session_id: str) -> Session:
         """Cancel a nonterminal session without discarding its last safe checkpoint."""
         session = self.get_session(session_id)
