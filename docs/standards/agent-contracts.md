@@ -115,6 +115,8 @@ TraceSpan
 
 回放结果使用 `TraceReplayReport`：包含 `replayable`、最终状态、状态序列、计划哈希、工具决策、回执引用和固定 mismatch code。报告不回显 trace 摘要正文；空 trace、重复 span、跨会话/trace 和状态不连续都必须显式标记。
 
+离线评测使用版本化 `EvalSample`（`sample_id`、`sample_version`、期望候选和实际候选），报告使用 `EvalReport`（样本/模型/提示词版本、候选 Precision/Recall/F1、字段准确率、证据覆盖和失败计数）。Runner 只比较结构化字段和候选 ID，不把候选正文或转写复制到报告；样本版本混用和重复样本 ID 必须拒绝。
+
 ## 5. DecisionCandidate
 
 ```text
