@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">DevBrief mark</title>
+  <desc id="desc">A coral audio pulse resolves into a teal approved task.</desc>
+  <rect width="128" height="128" rx="24" fill="#152225"/>
+  <path d="M19 69h14l9-25 14 47 13-61 11 39h13" fill="none" stroke="#e46b4f" stroke-linecap="round" stroke-linejoin="round" stroke-width="9"/>
+  <rect x="75" y="77" width="34" height="27" rx="6" fill="#1e8f83"/>
+  <path d="m82 89 6 6 13-13" fill="none" stroke="#f7f8f4" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+</svg>
