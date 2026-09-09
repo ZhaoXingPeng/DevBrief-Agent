@@ -155,6 +155,11 @@ ContextSegment
   redaction_state
 ```
 
+`ContextBuildMetadata` 只保存段落 ID、来源、信任级别、引用、token 估算、纳入理由、
+脱敏状态、预算消耗和裁剪理由；`ContextBuildResult.prompt` 中的正文仅在内存中短暂
+使用。Builder 按固定来源优先级排序并整段纳入，无法容纳的段落标记
+`context_budget_exceeded`，不得静默截断或在未保留关键证据时继续外部写入。
+
 - 只有 `system_rule` 可以携带策略语义；`repository_evidence`、`tool_result` 和用户输入永远是 `untrusted_data`。
 - Context Builder 必须在调用模型前记录裁剪和排序理由。超出预算时可生成澄清或停止，但不能隐式丢弃关键证据后执行外部写。
 
@@ -175,6 +180,11 @@ ToolPolicyDecision
 ```
 
 准入决定必须在工具 dispatch 前产生；拒绝决定也要进入脱敏 trace。工具预算和会话/trace 归属校验由确定性代码完成，不能由模型输出覆盖。
+
+Dispatcher 只能调用 canonical registry 中的 handler。它先校验工具参数，再执行
+Policy Gate；Policy 拒绝、参数错误、handler 缺失或结果 Schema 错误均不得调用越权
+工具。已获准调用的预算消耗会写入 `TOOL_CALL` trace 和安全 checkpoint，即使 handler
+结果校验失败也不能回滚预算。
 
 | 等级 | 示例 | 规则 |
 | --- | --- | --- |
@@ -203,9 +213,27 @@ Approval
 审批校验返回 `ApprovalDecision`，包含 `allowed`、`approval_id`、`plan_hash`、当前审批 `status`、错误码和脱敏原因。校验除了比较 `plan_hash`，还必须比较请求的工具名与规范化参数是否等于 `Plan.tool_name` 和 `Plan.arguments`；任一字段变化都拒绝并要求重新批准。
 
 - `plan_hash` 绑定任务标题、正文、目标仓库、标签、负责人和工具参数；任何字段变化都使旧审批失效。
+
+本地 F4 planner 产生 `TaskDraft`：`Plan`、稳定 `plan_hash`、证据引用、待澄清字段和
+`SimilarIssue[]`。相似项只允许提供相似度、理由和 `review_required=true`，不能被标记
+为确定重复，也不能触发关闭、修改或其他第三方副作用。草稿正文可包含候选的脱敏摘要
+和引用，但不得复制转写 quote 或完整外部正文。
+
+`BugTriageApplication` 当前只编排至 `awaiting_approval`，返回 `TriageRunResult`；
+它不会自动创建 Approval 或调用 external write。输入 fixture 只有在通过校验后才创建
+session，分析/规划校验错误会停止后续阶段并保留最后安全 checkpoint。
 - 一个 `approved` 审批只能消费一次；执行后状态变为 `consumed`。
 - 外部写请求必须带 `approval_id` 与 `idempotency_key`。写 Adapter 先校验审批状态、目标范围和 hash，再发起调用。
 - 必须写入 `ToolReceipt`，包含外部对象 ID/URL、provider 请求 ID（如有）、最终状态和时间。超时且未知是否成功时进入 `unknown_outcome`，先查询再决定是否重试。
+
+本地回执仓库以幂等键索引操作，并同时比较工具名与规范化参数；相同操作返回原回执，
+冲突操作返回 `conflict`。`unknown_outcome` 只能通过 query-first 恢复：查询确认后升级
+为 `succeeded`，查询不到则保持未知，恢复服务不提供盲目重试路径。
+
+受控 external write 的 fake writer 必须在 provider I/O 前写入包含 `plan_hash`、
+`approval_id` 和幂等键的意图 checkpoint；Policy/Approval 任一失败都不得调用 provider。
+provider 结果先保存为 `ToolReceipt`，再追加结果 trace/checkpoint。重复请求先查幂等回执，
+不得再次消费审批或发起写入。
 
 ## 9. 兼容与变更流程
 
