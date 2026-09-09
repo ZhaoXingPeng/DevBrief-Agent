@@ -42,6 +42,9 @@ class InMemoryCheckpointRepository:
         checkpoints = self._items.get(session_id, [])
         return checkpoints[-1] if checkpoints else None
 
+    def list_for(self, session_id: str) -> tuple[Checkpoint, ...]:
+        return tuple(self._items.get(session_id, []))
+
 
 class InMemoryTraceStore:
     """Append-only, redacted trace storage for the fake runtime."""
@@ -189,6 +192,78 @@ class Harness:
         self._write_checkpoint(updated)
         return updated
 
+    def record_external_intent(
+        self,
+        session_id: str,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        budget_after: ExecutionBudget,
+        plan_hash: str,
+        approval_id: str,
+        idempotency_key: str,
+    ) -> Session:
+        """Checkpoint an admitted external-write intent before provider I/O."""
+        session = self.get_session(session_id)
+        if budget_after.consumed_tool_calls != session.budget.consumed_tool_calls + 1:
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR,
+                "external intent must advance tool budget exactly once",
+            )
+        updated = replace(session, budget=budget_after)
+        self._sessions[session_id] = updated
+        self._append_trace(
+            updated,
+            TraceKind.TOOL_CALL,
+            input_summary=(
+                f"tool={tool_name}; call={tool_call_id}; intent=external_write"
+            ),
+            output_summary="external write intent checkpointed",
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+        )
+        self._write_checkpoint(
+            updated,
+            plan_hash=plan_hash,
+            approval_id=approval_id,
+            idempotency_keys=[idempotency_key],
+        )
+        return updated
+
+    def record_tool_result(
+        self,
+        session_id: str,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        output_summary: str,
+        error_code: ErrorCode | str | None = None,
+        plan_hash: str | None = None,
+        approval_id: str | None = None,
+        idempotency_key: str | None = None,
+        receipt_id: str | None = None,
+    ) -> Session:
+        """Record provider outcome after a pre-write intent checkpoint."""
+        session = self.get_session(session_id)
+        error = error_code.value if isinstance(error_code, ErrorCode) else error_code
+        self._append_trace(
+            session,
+            TraceKind.TOOL_CALL,
+            input_summary=f"tool={tool_name}; call={tool_call_id}; result=provider",
+            output_summary=output_summary,
+            error_code=redact_summary(error) if error is not None else None,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+            receipt_id=receipt_id,
+        )
+        self._write_checkpoint(
+            session,
+            plan_hash=plan_hash,
+            approval_id=approval_id,
+            idempotency_keys=[idempotency_key] if idempotency_key else [],
+        )
+        return session
+
     def append_trace(self, span: TraceSpan) -> None:
         """Mirror a validated policy span into the session trace."""
         session = self.get_session(span.session_id)
@@ -292,13 +367,23 @@ class Harness:
             error_code=error.code,
         )
 
-    def _write_checkpoint(self, session: Session) -> None:
+    def _write_checkpoint(
+        self,
+        session: Session,
+        *,
+        plan_hash: str | None = None,
+        approval_id: str | None = None,
+        idempotency_keys: list[str] | None = None,
+    ) -> None:
         self._checkpoint_counter += 1
         checkpoint = Checkpoint(
             checkpoint_id=f"chk_{session.session_id}_{self._checkpoint_counter}",
             session_id=session.session_id,
             state=session.state,
             budget_summary=session.budget,
+            plan_hash=plan_hash,
+            approval_id=approval_id,
+            idempotency_keys=idempotency_keys or [],
             last_event_id=f"spn_{session.session_id}_{self._span_counter}",
             created_at=self._now(),
         )
@@ -342,6 +427,7 @@ class Harness:
         state_after: SessionState | None = None,
         tool_call_id: str | None = None,
         tool_name: str | None = None,
+        receipt_id: str | None = None,
     ) -> None:
         self._span_counter += 1
         self.traces.append(
@@ -357,5 +443,6 @@ class Harness:
                 state_after=state_after,
                 tool_call_id=tool_call_id,
                 tool_name=tool_name,
+                receipt_id=receipt_id,
             )
         )

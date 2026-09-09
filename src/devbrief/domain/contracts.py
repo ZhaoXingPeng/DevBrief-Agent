@@ -415,6 +415,14 @@ class ToolReceipt(StrictModel):
     created_at: datetime
 
 
+class ExternalWriteOutcome(StrictModel):
+    allowed: bool
+    tool_name: str = Field(min_length=1)
+    receipt: ToolReceipt | None = None
+    error_code: str | None = None
+    reason: str = Field(min_length=1)
+
+
 class Plan(StrictModel):
     title: str = Field(min_length=1)
     body: str = Field(min_length=1)

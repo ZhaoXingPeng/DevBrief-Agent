@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from typing import Protocol
 
 from pydantic import ValidationError
 
@@ -84,6 +85,10 @@ class InMemoryReceiptRepository:
         return existing_receipt
 
 
+class ReceiptQueryAdapter(Protocol):
+    def query(self, request: ToolRequest) -> ToolReceipt | None: ...
+
+
 class FakeReceiptQueryAdapter:
     """Deterministic query-only fake; it never creates or retries an external object."""
 
@@ -107,7 +112,7 @@ class ReceiptRecoveryService:
     def __init__(
         self,
         repository: InMemoryReceiptRepository,
-        query_adapter: FakeReceiptQueryAdapter,
+        query_adapter: ReceiptQueryAdapter,
     ) -> None:
         self.repository = repository
         self.query_adapter = query_adapter

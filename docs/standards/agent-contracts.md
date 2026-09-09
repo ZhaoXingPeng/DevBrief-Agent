@@ -230,6 +230,11 @@ session，分析/规划校验错误会停止后续阶段并保留最后安全 ch
 冲突操作返回 `conflict`。`unknown_outcome` 只能通过 query-first 恢复：查询确认后升级
 为 `succeeded`，查询不到则保持未知，恢复服务不提供盲目重试路径。
 
+受控 external write 的 fake writer 必须在 provider I/O 前写入包含 `plan_hash`、
+`approval_id` 和幂等键的意图 checkpoint；Policy/Approval 任一失败都不得调用 provider。
+provider 结果先保存为 `ToolReceipt`，再追加结果 trace/checkpoint。重复请求先查幂等回执，
+不得再次消费审批或发起写入。
+
 ## 9. 兼容与变更流程
 
 | 变更 | 最低要求 |
