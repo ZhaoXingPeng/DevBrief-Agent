@@ -415,3 +415,22 @@ class Plan(StrictModel):
     assignee: str | None = None
     tool_name: str = Field(min_length=1)
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class SimilarIssue(StrictModel):
+    issue_id: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=240)
+    reference: str = Field(min_length=1)
+    similarity: float = Field(ge=0, le=1)
+    rationale: str = Field(min_length=1, max_length=240)
+    review_required: bool = True
+
+
+class TaskDraft(StrictModel):
+    plan: Plan
+    plan_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    evidence_refs: list[str] = Field(min_length=1)
+    clarification_items: list[str] = Field(default_factory=list)
+    similar_issues: list[SimilarIssue] = Field(
+        default_factory=lambda: list[SimilarIssue]()
+    )

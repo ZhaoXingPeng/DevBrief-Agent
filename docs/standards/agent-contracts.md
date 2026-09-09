@@ -208,6 +208,11 @@ Approval
 审批校验返回 `ApprovalDecision`，包含 `allowed`、`approval_id`、`plan_hash`、当前审批 `status`、错误码和脱敏原因。校验除了比较 `plan_hash`，还必须比较请求的工具名与规范化参数是否等于 `Plan.tool_name` 和 `Plan.arguments`；任一字段变化都拒绝并要求重新批准。
 
 - `plan_hash` 绑定任务标题、正文、目标仓库、标签、负责人和工具参数；任何字段变化都使旧审批失效。
+
+本地 F4 planner 产生 `TaskDraft`：`Plan`、稳定 `plan_hash`、证据引用、待澄清字段和
+`SimilarIssue[]`。相似项只允许提供相似度、理由和 `review_required=true`，不能被标记
+为确定重复，也不能触发关闭、修改或其他第三方副作用。草稿正文可包含候选的脱敏摘要
+和引用，但不得复制转写 quote 或完整外部正文。
 - 一个 `approved` 审批只能消费一次；执行后状态变为 `consumed`。
 - 外部写请求必须带 `approval_id` 与 `idempotency_key`。写 Adapter 先校验审批状态、目标范围和 hash，再发起调用。
 - 必须写入 `ToolReceipt`，包含外部对象 ID/URL、provider 请求 ID（如有）、最终状态和时间。超时且未知是否成功时进入 `unknown_outcome`，先查询再决定是否重试。
