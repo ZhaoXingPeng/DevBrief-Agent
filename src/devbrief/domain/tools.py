@@ -224,6 +224,9 @@ class PolicyGate:
                 ),
                 output_summary=(f"allowed={decision.allowed}; reason={reason}"),
                 error_code=decision.error_code,
+                tool_call_id=request.tool_call_id,
+                tool_name=request.tool_name,
+                tool_decision="allowed" if decision.allowed else "denied",
             ),
         )
 
