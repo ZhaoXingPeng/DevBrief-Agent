@@ -9,6 +9,7 @@ from devbrief.domain.contracts import (
     ImportedTranscript,
     TraceKind,
     TraceSpan,
+    TranscriptEvidenceReference,
     TranscriptFixture,
 )
 from devbrief.domain.errors import DevBriefError, ErrorCode
@@ -59,14 +60,14 @@ class InMemoryMeetingInputService:
         session_key = f"{fixture.fixture_id}\x00{fixture.fixture_version}".encode()
         session_id = f"ses_{sha256(session_key).hexdigest()[:16]}"
         evidence = [
-            {
-                "reference": (
+            TranscriptEvidenceReference(
+                reference=(
                     f"fixture://{fixture.fixture_id}/{fixture.fixture_version}"
                     f"#{segment.segment_id}"
                 ),
-                "start_ms": segment.start_ms,
-                "end_ms": segment.end_ms,
-            }
+                start_ms=segment.start_ms,
+                end_ms=segment.end_ms,
+            )
             for segment in fixture.segments
         ]
         return ImportedTranscript(
