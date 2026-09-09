@@ -221,6 +221,25 @@ class TraceSpan(StrictModel):
     error_code: str | None = None
     state_before: SessionState | None = None
     state_after: SessionState | None = None
+    plan_hash: str | None = None
+    tool_call_id: str | None = None
+    tool_name: str | None = None
+    tool_decision: str | None = None
+    receipt_id: str | None = None
+
+
+class TraceReplayReport(StrictModel):
+    replayable: bool
+    trace_id: str | None = None
+    session_id: str | None = None
+    final_state: SessionState | None = None
+    state_sequence: list[SessionState] = Field(
+        default_factory=lambda: list[SessionState]()
+    )
+    plan_hashes: list[str] = Field(default_factory=list)
+    tool_decisions: list[str] = Field(default_factory=list)
+    receipt_refs: list[str] = Field(default_factory=list)
+    mismatches: list[str] = Field(default_factory=list)
 
 
 class ToolLevel(StrEnum):
