@@ -42,3 +42,16 @@ def consume_model_usage(
     return budget.model_copy(
         update={"consumed_model_tokens": next_tokens, "consumed_cost": next_cost}
     )
+
+
+def consume_tool_call(budget: ExecutionBudget, now: datetime) -> ExecutionBudget:
+    """Consume one tool call while enforcing deadline and the fixed tool limit."""
+    if now >= budget.deadline_at:
+        raise DevBriefError(
+            ErrorCode.DEADLINE_EXCEEDED, "execution deadline has passed"
+        )
+    if budget.consumed_tool_calls >= budget.max_tool_calls:
+        raise DevBriefError(ErrorCode.BUDGET_EXHAUSTED, "maximum tool calls reached")
+    return budget.model_copy(
+        update={"consumed_tool_calls": budget.consumed_tool_calls + 1}
+    )

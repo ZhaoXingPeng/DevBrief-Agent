@@ -146,6 +146,20 @@ ContextSegment
 
 工具由一个有序 canonical registry 定义名称、描述、读写等级、执行类别、JSON Schema、处理器、超时、重试分类和审计要求。工具列举、planner 可见性、dispatch 和文档均从该注册表派生；启动时必须检测重名、无 handler、Schema 不匹配和权限漂移。
 
+Policy Gate 只返回结构化 `ToolPolicyDecision`，不执行处理器：
+
+```text
+ToolPolicyDecision
+  allowed
+  tool_name
+  tool_level
+  error_code
+  reason (脱敏摘要)
+  budget_after
+```
+
+准入决定必须在工具 dispatch 前产生；拒绝决定也要进入脱敏 trace。工具预算和会话/trace 归属校验由确定性代码完成，不能由模型输出覆盖。
+
 | 等级 | 示例 | 规则 |
 | --- | --- | --- |
 | `read` | `search_code`、`read_adr`、`list_issues` | 默认允许，仍受仓库/用户授权范围和执行预算限制 |
