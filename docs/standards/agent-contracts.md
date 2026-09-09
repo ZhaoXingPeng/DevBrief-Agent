@@ -6,6 +6,11 @@ Phase 1 的转写输入已由 [Pydantic 契约](../../src/devbrief/domain/contra
 和 [JSON Schema](../../schemas/transcript-fixture.schema.json) 共同校验。fixture
 只用于合成、脱敏的本地 fake 路径；真实音频、ASR 与外部写入不在此切片范围内。
 
+转写输入进入应用层时，只形成 `ImportedTranscript`：稳定的会话/trace ID、fixture
+ID 与版本、内容摘要哈希、段数量和带时间范围的证据引用。段落正文和说话人标签仅
+在 Adapter 的短暂校验过程中使用，不写入 import 记录、trace 或 checkpoint。输入
+不推断负责人、期限或其他候选字段；后续候选提取必须单独完成并保留不确定性。
+
 ## 1. 不变量
 
 1. 会话事件有稳定 ID、版本、时间、会话和关联 ID。

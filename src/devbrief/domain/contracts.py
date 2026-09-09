@@ -80,7 +80,7 @@ class Evidence(StrictModel):
 
 
 class TranscriptSegment(StrictModel):
-    segment_id: str = Field(min_length=1)
+    segment_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
     start_ms: int = Field(ge=0)
     end_ms: int = Field(gt=0)
     speaker: str = Field(min_length=1)
@@ -96,8 +96,10 @@ class TranscriptSegment(StrictModel):
 
 
 class TranscriptFixture(StrictModel):
-    fixture_id: str = Field(min_length=1)
-    fixture_version: str = Field(min_length=1)
+    fixture_id: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
+    fixture_version: str = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    )
     redacted: bool
     segments: list[TranscriptSegment] = Field(min_length=1)
 
@@ -119,6 +121,30 @@ class TranscriptFixture(StrictModel):
         if value != expected:
             raise ValueError("segments must be ordered by start_ms then segment_id")
         return value
+
+
+class TranscriptEvidenceReference(StrictModel):
+    reference: str = Field(min_length=1)
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(gt=0)
+
+    @field_validator("end_ms")
+    @classmethod
+    def ends_after_start(cls, value: int, info: Any) -> int:
+        start = info.data.get("start_ms")
+        if start is not None and value <= start:
+            raise ValueError("end_ms must be greater than start_ms")
+        return value
+
+
+class ImportedTranscript(StrictModel):
+    session_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    fixture_id: str = Field(min_length=1)
+    fixture_version: str = Field(min_length=1)
+    fixture_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    segment_count: int = Field(gt=0)
+    evidence: list[TranscriptEvidenceReference] = Field(min_length=1)
 
 
 class DecisionCandidate(StrictModel):
@@ -174,6 +200,7 @@ class Checkpoint(StrictModel):
 
 
 class TraceKind(StrEnum):
+    INPUT_INGEST = "input_ingest"
     STATE_TRANSITION = "state_transition"
     MODEL_CALL = "model_call"
     TOOL_CALL = "tool_call"

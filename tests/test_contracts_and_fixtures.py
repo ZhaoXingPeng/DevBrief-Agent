@@ -66,6 +66,19 @@ def test_fixture_rejects_unredacted_invalid_time_and_non_deterministic_order() -
             TranscriptFixture.model_validate(invalid)
 
 
+def test_fixture_rejects_unsafe_identifiers_and_non_semantic_versions() -> None:
+    unsafe_fixture_id = valid_fixture()
+    unsafe_fixture_id["fixture_id"] = "token=not-safe"
+    invalid_version = valid_fixture()
+    invalid_version["fixture_version"] = "latest"
+    unsafe_segment_id = valid_fixture()
+    unsafe_segment_id["segments"][0]["segment_id"] = "seg;secret"  # type: ignore[index]
+
+    for invalid in (unsafe_fixture_id, invalid_version, unsafe_segment_id):
+        with pytest.raises(ValidationError):
+            TranscriptFixture.model_validate(invalid)
+
+
 def test_loader_returns_stable_validation_error(tmp_path: Path) -> None:
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(
