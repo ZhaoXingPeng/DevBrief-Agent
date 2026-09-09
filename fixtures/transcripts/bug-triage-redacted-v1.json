@@ -1,0 +1,21 @@
+{
+  "fixture_id": "bug-triage-redacted-v1",
+  "fixture_version": "1.0.0",
+  "redacted": true,
+  "segments": [
+    {
+      "segment_id": "seg_001",
+      "start_ms": 0,
+      "end_ms": 2400,
+      "speaker": "engineer_a",
+      "text": "Synthetic authentication refresh failure needs a tracked fix."
+    },
+    {
+      "segment_id": "seg_002",
+      "start_ms": 2600,
+      "end_ms": 5100,
+      "speaker": "engineer_b",
+      "text": "The owner and due date remain unknown until the service owner confirms."
+    }
+  ]
+}
