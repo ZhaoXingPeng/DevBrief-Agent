@@ -442,3 +442,15 @@ class TaskDraft(StrictModel):
     similar_issues: list[SimilarIssue] = Field(
         default_factory=lambda: list[SimilarIssue]()
     )
+
+
+class TriageRunResult(StrictModel):
+    session_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    state: SessionState
+    candidates: list[DecisionCandidate] = Field(
+        default_factory=lambda: list[DecisionCandidate]()
+    )
+    draft: TaskDraft
+    approval_status: ApprovalStatus
+    budget: ExecutionBudget
