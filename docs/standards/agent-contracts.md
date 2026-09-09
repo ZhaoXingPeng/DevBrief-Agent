@@ -222,6 +222,10 @@ Approval
 - 外部写请求必须带 `approval_id` 与 `idempotency_key`。写 Adapter 先校验审批状态、目标范围和 hash，再发起调用。
 - 必须写入 `ToolReceipt`，包含外部对象 ID/URL、provider 请求 ID（如有）、最终状态和时间。超时且未知是否成功时进入 `unknown_outcome`，先查询再决定是否重试。
 
+本地回执仓库以幂等键索引操作，并同时比较工具名与规范化参数；相同操作返回原回执，
+冲突操作返回 `conflict`。`unknown_outcome` 只能通过 query-first 恢复：查询确认后升级
+为 `succeeded`，查询不到则保持未知，恢复服务不提供盲目重试路径。
+
 ## 9. 兼容与变更流程
 
 | 变更 | 最低要求 |

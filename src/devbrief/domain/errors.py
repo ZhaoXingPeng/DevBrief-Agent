@@ -15,6 +15,10 @@ class ErrorCode(StrEnum):
     CANCELLED = "cancelled"
     CHECKPOINT_UNAVAILABLE = "checkpoint_unavailable"
     UNKNOWN_OUTCOME = "unknown_outcome"
+    CONFLICT = "conflict"
+    TRANSIENT_PROVIDER_ERROR = "transient_provider_error"
+    AUTH_ERROR = "auth_error"
+    RATE_LIMITED = "rate_limited"
     INTERNAL_ERROR = "internal_error"
 
 
