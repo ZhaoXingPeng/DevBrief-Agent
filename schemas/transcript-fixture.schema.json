@@ -6,8 +6,8 @@
   "additionalProperties": false,
   "required": ["fixture_id", "fixture_version", "redacted", "segments"],
   "properties": {
-    "fixture_id": {"type": "string", "minLength": 1},
-    "fixture_version": {"type": "string", "minLength": 1},
+    "fixture_id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "fixture_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"},
     "redacted": {"const": true},
     "segments": {
       "type": "array",
@@ -17,7 +17,7 @@
         "additionalProperties": false,
         "required": ["segment_id", "start_ms", "end_ms", "speaker", "text"],
         "properties": {
-          "segment_id": {"type": "string", "minLength": 1},
+          "segment_id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
           "start_ms": {"type": "integer", "minimum": 0},
           "end_ms": {"type": "integer", "exclusiveMinimum": 0},
           "speaker": {"type": "string", "minLength": 1},
