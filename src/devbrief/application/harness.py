@@ -157,6 +157,47 @@ class Harness:
         self._write_checkpoint(updated)
         return updated
 
+    def record_tool_call(
+        self,
+        session_id: str,
+        *,
+        tool_call_id: str,
+        tool_name: str,
+        budget_after: ExecutionBudget,
+        output_summary: str,
+        error_code: ErrorCode | str | None = None,
+    ) -> Session:
+        """Persist an already-admitted tool call and its resulting safe checkpoint."""
+        session = self.get_session(session_id)
+        if budget_after.consumed_tool_calls != session.budget.consumed_tool_calls + 1:
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR,
+                "tool budget must advance exactly once",
+            )
+        updated = replace(session, budget=budget_after)
+        self._sessions[session_id] = updated
+        error = error_code.value if isinstance(error_code, ErrorCode) else error_code
+        self._append_trace(
+            updated,
+            TraceKind.TOOL_CALL,
+            input_summary=f"tool={tool_name}; call={tool_call_id}",
+            output_summary=output_summary,
+            error_code=redact_summary(error) if error is not None else None,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+        )
+        self._write_checkpoint(updated)
+        return updated
+
+    def append_trace(self, span: TraceSpan) -> None:
+        """Mirror a validated policy span into the session trace."""
+        session = self.get_session(span.session_id)
+        if span.trace_id != session.trace_id:
+            raise DevBriefError(
+                ErrorCode.POLICY_DENIED, "trace does not belong to session"
+            )
+        self.traces.append(span)
+
     def cancel(self, session_id: str) -> Session:
         """Cancel a nonterminal session without discarding its last safe checkpoint."""
         session = self.get_session(session_id)
@@ -283,6 +324,8 @@ class Harness:
         error_code: str | None = None,
         state_before: SessionState | None = None,
         state_after: SessionState | None = None,
+        tool_call_id: str | None = None,
+        tool_name: str | None = None,
     ) -> None:
         self._span_counter += 1
         self.traces.append(
@@ -296,5 +339,7 @@ class Harness:
                 error_code=error_code,
                 state_before=state_before,
                 state_after=state_after,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
             )
         )

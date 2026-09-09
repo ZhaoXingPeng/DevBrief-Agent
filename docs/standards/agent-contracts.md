@@ -181,6 +181,11 @@ ToolPolicyDecision
 
 准入决定必须在工具 dispatch 前产生；拒绝决定也要进入脱敏 trace。工具预算和会话/trace 归属校验由确定性代码完成，不能由模型输出覆盖。
 
+Dispatcher 只能调用 canonical registry 中的 handler。它先校验工具参数，再执行
+Policy Gate；Policy 拒绝、参数错误、handler 缺失或结果 Schema 错误均不得调用越权
+工具。已获准调用的预算消耗会写入 `TOOL_CALL` trace 和安全 checkpoint，即使 handler
+结果校验失败也不能回滚预算。
+
 | 等级 | 示例 | 规则 |
 | --- | --- | --- |
 | `read` | `search_code`、`read_adr`、`list_issues` | 默认允许，仍受仓库/用户授权范围和执行预算限制 |
