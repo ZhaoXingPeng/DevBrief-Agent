@@ -135,6 +135,13 @@ DecisionCandidate
 
 `evidence` 至少包含一种来源：`transcript_segment`、`audio_range`、`repository_file`、`adr`、`issue` 或 `human_note`。`confidence` 只能影响排序和澄清建议，不能跳过预算、策略或批准。
 
+F2 的本地 fake analyzer 只读取已校验、脱敏的 fixture，并以确定性规则产生
+`DecisionCandidate`。它不会从姓名、相对日期或口语上下文推断 `owner`、`due_at`；
+无法证明的字段保持 `unknown` 或 `ambiguous`，并以 `clarification` 候选呈现待确认
+问题。候选必须引用 `transcript_segment`，但不能复制段落正文或 quote 到应用输出、
+trace 或 checkpoint。任何 fake/模型输出都先由 `DecisionCandidate` 校验；不合法输出
+返回 `validation_error`，不能进入计划阶段。
+
 ## 6. 上下文区段
 
 ```text
