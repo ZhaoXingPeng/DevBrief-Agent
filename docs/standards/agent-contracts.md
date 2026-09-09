@@ -2,6 +2,10 @@
 
 本文是 DevBrief 会话事件、运行时、决策、工具、审批与回执的语义基线。正式 JSON Schema、Pydantic 模型和 TypeScript 类型落地后必须由同一份契约生成或相互验证；不得维护多份手工漂移的工具清单。
 
+Phase 1 的转写输入已由 [Pydantic 契约](../../src/devbrief/domain/contracts.py)
+和 [JSON Schema](../../schemas/transcript-fixture.schema.json) 共同校验。fixture
+只用于合成、脱敏的本地 fake 路径；真实音频、ASR 与外部写入不在此切片范围内。
+
 ## 1. 不变量
 
 1. 会话事件有稳定 ID、版本、时间、会话和关联 ID。
