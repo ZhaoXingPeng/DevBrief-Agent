@@ -73,10 +73,58 @@ class EvidenceKind(StrEnum):
     HUMAN_NOTE = "human_note"
 
 
+class ContextSourceKind(StrEnum):
+    SYSTEM_RULE = "system_rule"
+    USER_INPUT = "user_input"
+    TRANSCRIPT = "transcript"
+    REPOSITORY_EVIDENCE = "repository_evidence"
+    TOOL_RESULT = "tool_result"
+    HUMAN_NOTE = "human_note"
+
+
+class ContextTrustLevel(StrEnum):
+    TRUSTED_POLICY = "trusted_policy"
+    UNTRUSTED_DATA = "untrusted_data"
+
+
+class RedactionState(StrEnum):
+    REDACTED = "redacted"
+    UNREDACTED = "unredacted"
+    UNKNOWN = "unknown"
+
+
 class Evidence(StrictModel):
     kind: EvidenceKind
     reference: str = Field(min_length=1)
     quote: str | None = None
+
+
+class ContextSegment(StrictModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    source_kind: ContextSourceKind
+    trust_level: ContextTrustLevel
+    reference: str = Field(min_length=1)
+    token_estimate: int = Field(gt=0)
+    inclusion_reason: str = Field(min_length=1)
+    redaction_state: RedactionState
+
+    @property
+    def source_id(self) -> str:
+        """Compatibility name for application callers that use source identifiers."""
+        return self.id
+
+
+class ContextBuildMetadata(StrictModel):
+    max_tokens: int = Field(gt=0)
+    consumed_tokens: int = Field(ge=0)
+    included: list[ContextSegment] = Field(
+        default_factory=lambda: list[ContextSegment]()
+    )
+    excluded: list[ContextSegment] = Field(
+        default_factory=lambda: list[ContextSegment]()
+    )
+    truncated_count: int = Field(ge=0)
+    truncation_reasons: dict[str, str] = Field(default_factory=dict)
 
 
 class TranscriptSegment(StrictModel):
@@ -315,6 +363,14 @@ class ToolResult(StrictModel):
     references: list[str] = Field(default_factory=list)
 
 
+class ToolDispatchOutcome(StrictModel):
+    allowed: bool
+    tool_name: str = Field(min_length=1)
+    result: ToolResult | None = None
+    error_code: str | None = None
+    reason: str = Field(min_length=1)
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
@@ -359,6 +415,14 @@ class ToolReceipt(StrictModel):
     created_at: datetime
 
 
+class ExternalWriteOutcome(StrictModel):
+    allowed: bool
+    tool_name: str = Field(min_length=1)
+    receipt: ToolReceipt | None = None
+    error_code: str | None = None
+    reason: str = Field(min_length=1)
+
+
 class Plan(StrictModel):
     title: str = Field(min_length=1)
     body: str = Field(min_length=1)
@@ -367,3 +431,34 @@ class Plan(StrictModel):
     assignee: str | None = None
     tool_name: str = Field(min_length=1)
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class SimilarIssue(StrictModel):
+    issue_id: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=240)
+    reference: str = Field(min_length=1)
+    similarity: float = Field(ge=0, le=1)
+    rationale: str = Field(min_length=1, max_length=240)
+    review_required: bool = True
+
+
+class TaskDraft(StrictModel):
+    plan: Plan
+    plan_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    evidence_refs: list[str] = Field(min_length=1)
+    clarification_items: list[str] = Field(default_factory=list)
+    similar_issues: list[SimilarIssue] = Field(
+        default_factory=lambda: list[SimilarIssue]()
+    )
+
+
+class TriageRunResult(StrictModel):
+    session_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    state: SessionState
+    candidates: list[DecisionCandidate] = Field(
+        default_factory=lambda: list[DecisionCandidate]()
+    )
+    draft: TaskDraft
+    approval_status: ApprovalStatus
+    budget: ExecutionBudget
