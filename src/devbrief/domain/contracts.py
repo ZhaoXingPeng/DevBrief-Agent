@@ -160,6 +160,30 @@ class DecisionCandidate(StrictModel):
     status: CandidateStatus = CandidateStatus.PROPOSED
 
 
+class EvalSample(StrictModel):
+    sample_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    sample_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+    expected: list[DecisionCandidate] = Field(
+        default_factory=lambda: list[DecisionCandidate]()
+    )
+    predicted: list[DecisionCandidate] = Field(
+        default_factory=lambda: list[DecisionCandidate]()
+    )
+
+
+class EvalReport(StrictModel):
+    sample_version: str = Field(min_length=1)
+    model_version: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    sample_count: int = Field(gt=0)
+    candidate_precision: float = Field(ge=0, le=1)
+    candidate_recall: float = Field(ge=0, le=1)
+    candidate_f1: float = Field(ge=0, le=1)
+    field_accuracy: dict[str, float] = Field(default_factory=dict)
+    evidence_coverage: float = Field(ge=0, le=1)
+    failure_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class ExecutionBudget(StrictModel):
     max_steps: int = Field(gt=0)
     max_tool_calls: int = Field(ge=0)
