@@ -363,6 +363,14 @@ class ToolResult(StrictModel):
     references: list[str] = Field(default_factory=list)
 
 
+class ToolDispatchOutcome(StrictModel):
+    allowed: bool
+    tool_name: str = Field(min_length=1)
+    result: ToolResult | None = None
+    error_code: str | None = None
+    reason: str = Field(min_length=1)
+
+
 class ApprovalStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
