@@ -155,6 +155,11 @@ ContextSegment
   redaction_state
 ```
 
+`ContextBuildMetadata` 只保存段落 ID、来源、信任级别、引用、token 估算、纳入理由、
+脱敏状态、预算消耗和裁剪理由；`ContextBuildResult.prompt` 中的正文仅在内存中短暂
+使用。Builder 按固定来源优先级排序并整段纳入，无法容纳的段落标记
+`context_budget_exceeded`，不得静默截断或在未保留关键证据时继续外部写入。
+
 - 只有 `system_rule` 可以携带策略语义；`repository_evidence`、`tool_result` 和用户输入永远是 `untrusted_data`。
 - Context Builder 必须在调用模型前记录裁剪和排序理由。超出预算时可生成澄清或停止，但不能隐式丢弃关键证据后执行外部写。
 
