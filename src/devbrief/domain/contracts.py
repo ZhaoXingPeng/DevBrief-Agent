@@ -252,9 +252,19 @@ class ToolRequest(StrictModel):
     tool_name: str = Field(min_length=1)
     arguments: dict[str, Any] = Field(default_factory=dict)
     session_id: str = Field(min_length=1)
+    trace_id: str | None = Field(default=None, min_length=1)
     approval_id: str | None = None
     idempotency_key: str | None = None
     plan_hash: str | None = None
+
+
+class ToolPolicyDecision(StrictModel):
+    allowed: bool
+    tool_name: str = Field(min_length=1)
+    tool_level: ToolLevel
+    error_code: str | None = None
+    reason: str = Field(min_length=1)
+    budget_after: ExecutionBudget | None = None
 
 
 class ToolResult(StrictModel):
