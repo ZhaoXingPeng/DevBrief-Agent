@@ -290,6 +290,15 @@ class Approval(StrictModel):
     created_at: datetime
 
 
+class ApprovalDecision(StrictModel):
+    allowed: bool
+    approval_id: str = Field(min_length=1)
+    plan_hash: str = Field(min_length=1)
+    status: ApprovalStatus | None = None
+    error_code: str | None = None
+    reason: str = Field(min_length=1)
+
+
 class ToolReceiptStatus(StrEnum):
     SUCCEEDED = "succeeded"
     UNKNOWN_OUTCOME = "unknown_outcome"
