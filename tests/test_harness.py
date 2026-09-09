@@ -113,6 +113,18 @@ def test_model_token_and_cost_budgets_stop_future_work() -> None:
     )
 
 
+def test_resume_preserves_model_budget_consumed_before_recoverable_failure() -> None:
+    harness = Harness(now=lambda: NOW)
+    session = harness.create_session("ses_model_resume", budget())
+    session = harness.record_model_usage(session.session_id, tokens=3, cost=0.4)
+    harness.fail_recoverable(session.session_id, "transient_provider_error")
+
+    resumed = harness.resume(session.session_id)
+
+    assert resumed.budget.consumed_model_tokens == 3
+    assert resumed.budget.consumed_cost == 0.4
+
+
 def test_cancel_is_terminal_and_trace_retains_only_metadata() -> None:
     harness = Harness(now=lambda: NOW)
     session = harness.create_session("ses_cancel", budget())

@@ -154,6 +154,7 @@ class Harness:
             input_summary=f"tokens={tokens}; cost={cost:.4f}",
             output_summary="model budget recorded",
         )
+        self._write_checkpoint(updated)
         return updated
 
     def cancel(self, session_id: str) -> Session:
