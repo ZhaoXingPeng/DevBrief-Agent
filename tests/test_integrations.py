@@ -13,6 +13,7 @@ from devbrief.domain.contracts import (
     TriageRunResult,
 )
 from devbrief.integration.github import GitHubError, GitHubIssueClient
+from devbrief.integration.media import segments_from_response
 from devbrief.integration.storage import SQLiteRunStore
 
 
@@ -75,3 +76,19 @@ def test_github_client_requires_token_for_live_write() -> None:
         assert "TOKEN" in str(exc)
     else:
         raise AssertionError("live GitHub write must require a token")
+
+
+def test_asr_response_becomes_ordered_redacted_segments() -> None:
+    segments = segments_from_response(
+        {
+            "segments": [
+                {"text": "token=private-value", "start": 0.0, "end": 1.25},
+                {"text": "next decision", "start": 1.25, "end": 2.0},
+            ]
+        },
+        "unused",
+    )
+
+    assert segments[0].text == "token=[REDACTED]"
+    assert segments[0].end_ms == 1250
+    assert segments[1].start_ms == 1250
