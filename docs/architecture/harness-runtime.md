@@ -1,6 +1,6 @@
 # DevBrief 单 Agent Harness Runtime
 
-**状态：** 目标架构，尚未实现。
+**状态：** 本地单 Agent Harness v1 已实现；生产并发、分布式锁和多 Agent 仍为后续设计。
 
 本文件定义 DevBrief 的 Agent 运行时边界。产品不以“一个模型调用成功”作为完成标准，而以任务在预算、权限、失败和恢复约束下可复查地完成为标准。正式事件、工具和审批字段以 [Agent 契约](../standards/agent-contracts.md) 为准。
 

@@ -219,6 +219,29 @@ class EvalSample(StrictModel):
     )
 
 
+class EvalDatasetSample(StrictModel):
+    """One public, labeled fixture evaluated by a local analyzer."""
+
+    sample_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    fixture_path: str = Field(min_length=1)
+    expected: list[DecisionCandidate] = Field(
+        default_factory=lambda: list[DecisionCandidate]()
+    )
+
+
+class EvalDataset(StrictModel):
+    """Versioned public inputs and labels for a reproducible Eval run."""
+
+    dataset_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    dataset_version: str = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    )
+    sample_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+    model_version: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    samples: list[EvalDatasetSample] = Field(min_length=1)
+
+
 class EvalReport(StrictModel):
     sample_version: str = Field(min_length=1)
     model_version: str = Field(min_length=1)
@@ -230,6 +253,14 @@ class EvalReport(StrictModel):
     field_accuracy: dict[str, float] = Field(default_factory=dict)
     evidence_coverage: float = Field(ge=0, le=1)
     failure_counts: dict[str, int] = Field(default_factory=dict)
+
+
+class EvalArtifact(StrictModel):
+    """Redacted, reproducible aggregate output for one Eval dataset."""
+
+    dataset_id: str = Field(min_length=1)
+    dataset_version: str = Field(min_length=1)
+    report: EvalReport
 
 
 class ExecutionBudget(StrictModel):

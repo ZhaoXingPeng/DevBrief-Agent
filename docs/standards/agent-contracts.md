@@ -252,3 +252,22 @@ provider 结果先保存为 `ToolReceipt`，再追加结果 trace/checkpoint。�
 错误至少区分：`validation_error`、`policy_denied`、`tool_not_allowed`、`approval_required`、`approval_expired`、`auth_error`、`rate_limited`、`transient_provider_error`、`conflict`、`unknown_outcome`、`budget_exhausted`、`deadline_exceeded`、`cost_exhausted`、`cancelled`、`checkpoint_unavailable` 和 `internal_error`。
 
 只有 `transient_provider_error` 可以在明确上限内自动重试。`unknown_outcome` 不得盲目重试，必须先用幂等键或查询工具确认外部对象是否已创建。任何预算或取消错误不得通过自动增加限额绕过。
+
+## 11. Eval 数据集与基线
+
+公开回归数据使用 `EvalDataset`：`dataset_id`、`dataset_version`、统一的
+`sample_version`、`model_version`、`prompt_version` 与至少一个 `EvalDatasetSample`。每个
+sample 只保存相对于数据集文件的 fixture 路径与人工 `expected` 标注；运行时生成
+`predicted`，不得把预测候选或转写正文写回数据集。
+
+`devbrief eval` 的输出是 `EvalArtifact`，仅包含数据集标识/版本以及 `EvalReport` 的聚合
+字段：样本数、候选 Precision/Recall/F1、字段准确率、证据覆盖与固定失败分类。artifact
+不得包含原始音频、完整转写、候选正文、凭据、全量 trace 或外部对象内容。
+
+- 默认数据集为 `fixtures/evals/bug-triage-v1.json`；fixture 路径相对数据集文件解析，且必须
+  留在 `fixtures/` 根目录内，不能使用绝对路径或越界路径。
+- `--output` 生成候选基线；基线变更必须与标注/行为变更同一 Issue 审阅。
+- `--check <baseline>` 比较完整聚合 artifact；缺失、Schema 非法或不匹配必须以 CLI 退出码
+  `2` 失败，不能静默更新基线。
+- fake 基线只证明回归契约和固定路径行为。真实模型、ASR、检索或外部工具的质量、时延与
+  成本必须在独立实验记录中标注环境、版本、样本范围和不可外推限制。

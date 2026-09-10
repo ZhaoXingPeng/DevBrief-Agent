@@ -1,0 +1,57 @@
+{
+  "dataset_id": "bug-triage-fake-baseline",
+  "dataset_version": "1.0.0",
+  "sample_version": "1.0.0",
+  "model_version": "fake-rule-analyzer-1.0.0",
+  "prompt_version": "not-applicable-deterministic-1.0.0",
+  "samples": [
+    {
+      "sample_id": "auth_refresh_action",
+      "fixture_path": "../transcripts/bug-triage-redacted-v1.json",
+      "expected": [
+        {
+          "candidate_id": "can_a52bdb2fd424a38d",
+          "kind": "action_item",
+          "statement": "Track remediation for the reported authentication refresh failure.",
+          "owner": "unknown",
+          "due_at": "unknown",
+          "priority": "unknown",
+          "acceptance_criteria": [
+            "Confirm a remediation owner.",
+            "Confirm a due date before external planning."
+          ],
+          "evidence": [
+            {
+              "kind": "transcript_segment",
+              "reference": "fixture://bug-triage-redacted-v1/1.0.0#seg_001"
+            }
+          ],
+          "confidence": 1.0,
+          "status": "needs_clarification"
+        },
+        {
+          "candidate_id": "can_02303675510a63d8",
+          "kind": "clarification",
+          "statement": "Clarify the remediation owner and due date before creating a task plan.",
+          "owner": "unknown",
+          "due_at": "unknown",
+          "priority": "unknown",
+          "acceptance_criteria": [],
+          "evidence": [
+            {
+              "kind": "transcript_segment",
+              "reference": "fixture://bug-triage-redacted-v1/1.0.0#seg_001"
+            }
+          ],
+          "confidence": 1.0,
+          "status": "needs_clarification"
+        }
+      ]
+    },
+    {
+      "sample_id": "no_action",
+      "fixture_path": "../transcripts/bug-triage-no-action-redacted-v1.json",
+      "expected": []
+    }
+  ]
+}

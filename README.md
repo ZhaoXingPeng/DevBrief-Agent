@@ -83,6 +83,7 @@ devbrief serve --port 8000
 devbrief approve <session_id> --url http://127.0.0.1:8000
 devbrief evidence README.md
 devbrief draft plan.json
+devbrief eval --check docs/evals/bug-triage-v1-baseline.json
 pytest
 ruff format --check .
 ruff check .
@@ -111,6 +112,7 @@ devbrief speak "准备提交任务" --output briefing.wav
 - [Agent 契约](docs/standards/agent-contracts.md)
 - [工程规范](docs/standards/engineering.md)
 - [实验记录规范](docs/standards/experiment-records.md)
+- [Bug Triage Eval 基线](docs/evals/README.md)
 - [ADR 记录](docs/adr/0001-single-agent-harness-first.md)
 - [贡献与 PR/Issue 规范](CONTRIBUTING.md)
 - [安全报告](SECURITY.md)
@@ -120,7 +122,7 @@ devbrief speak "准备提交任务" --output briefing.wav
 - [x] Phase 1：无凭据 Harness、fixture、分析、计划、策略、审批、回执、回放和 fake external-write。
 - [x] Phase 2：SQLite、GitHub Issues、仓库范围校验、审批 UI 和任务 draft API。
 - [x] Phase 3：真实 GitHub/百炼 provider、dry-run、凭据边界和失败恢复入口。
-- [x] Phase 4：评测基础、GitHub Actions CI、可观测 trace/checkpoint 摘要。
+- [x] Phase 4：版本化 Eval 基线/报告、GitHub Actions CI、可观测 trace/checkpoint 摘要。
 - [x] Phase 5：音频上传、ASR 脱敏 fixture、TTS 播放和实时体验实验入口。
 - [ ] 后续：生产鉴权、限流、多租户、实时流式 ASR 和更完整的仓库证据索引。
 
