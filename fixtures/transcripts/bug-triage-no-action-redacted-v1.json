@@ -1,0 +1,14 @@
+{
+  "fixture_id": "bug-triage-no-action-v1",
+  "fixture_version": "1.0.0",
+  "redacted": true,
+  "segments": [
+    {
+      "segment_id": "seg_001",
+      "start_ms": 0,
+      "end_ms": 1800,
+      "speaker": "engineer_a",
+      "text": "Synthetic review notes record a completed deployment with no new action item."
+    }
+  ]
+}
