@@ -1,11 +1,20 @@
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any, cast
 
-from devbrief.domain.contracts import TriageRunResult
+from devbrief.domain.contracts import (
+    Approval,
+    Checkpoint,
+    ToolReceipt,
+    TraceSpan,
+    TriageRunResult,
+)
 
 
 class SQLiteRunStore:
@@ -28,8 +37,30 @@ class SQLiteRunStore:
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(triage_runs)")
+            }
+            for name in (
+                "approval_json",
+                "receipt_json",
+                "trace_json",
+                "checkpoint_json",
+            ):
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE triage_runs ADD COLUMN {name} TEXT"
+                    )
 
-    def save(self, result: TriageRunResult) -> None:
+    def save(
+        self,
+        result: TriageRunResult,
+        *,
+        approval: Approval | None = None,
+        receipt: ToolReceipt | None = None,
+        traces: tuple[TraceSpan, ...] = (),
+        checkpoints: tuple[Checkpoint, ...] = (),
+    ) -> None:
         self.initialize()
         payload = json.dumps(
             result.model_dump(mode="json"),
@@ -40,15 +71,47 @@ class SQLiteRunStore:
         with sqlite3.connect(self.path) as connection:
             connection.execute(
                 """
-                INSERT INTO triage_runs(session_id, trace_id, state, result_json)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO triage_runs(
+                    session_id, trace_id, state, result_json,
+                    approval_json, receipt_json, trace_json, checkpoint_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     trace_id=excluded.trace_id,
                     state=excluded.state,
-                    result_json=excluded.result_json
+                    result_json=excluded.result_json,
+                    approval_json=COALESCE(excluded.approval_json, triage_runs.approval_json),
+                    receipt_json=COALESCE(excluded.receipt_json, triage_runs.receipt_json),
+                    trace_json=COALESCE(excluded.trace_json, triage_runs.trace_json),
+                    checkpoint_json=COALESCE(excluded.checkpoint_json, triage_runs.checkpoint_json)
                 """,
-                (result.session_id, result.trace_id, result.state.value, payload),
+                (
+                    result.session_id,
+                    result.trace_id,
+                    result.state.value,
+                    payload,
+                    _dump(approval),
+                    _dump(receipt),
+                    _dump(list(traces)) if traces else None,
+                    _dump(list(checkpoints)) if checkpoints else None,
+                ),
             )
+
+    def get_artifacts(self, session_id: str) -> dict[str, object | None]:
+        self.initialize()
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT approval_json, receipt_json, trace_json, checkpoint_json "
+                "FROM triage_runs WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            return {}
+        return {
+            "approval": _load(row[0]),
+            "receipt": _load(row[1]),
+            "traces": _load(row[2]) or [],
+            "checkpoints": _load(row[3]) or [],
+        }
 
     def get(self, session_id: str) -> TriageRunResult | None:
         self.initialize()
@@ -77,3 +140,21 @@ class SQLiteRunStore:
             }
             for row in rows
         )
+
+
+def _dump(value: object | None) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")  # type: ignore[union-attr]
+    elif isinstance(value, (list, tuple)):
+        items = list(cast(Iterable[Any], value))
+        value = [
+            item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+            for item in items
+        ]
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
+def _load(value: str | None) -> object | None:
+    return json.loads(value) if value else None

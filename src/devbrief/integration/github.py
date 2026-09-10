@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from devbrief.domain.contracts import ToolReceipt, ToolReceiptStatus, ToolRequest
+from devbrief.domain.errors import DevBriefError, ErrorCode
 
 
 class GitHubError(RuntimeError):
@@ -83,3 +87,80 @@ class GitHubIssueClient:
         if not isinstance(number, int) or not isinstance(url, str):
             raise GitHubError("GitHub response omitted issue identity")
         return GitHubIssue(number=number, url=url, title=title, dry_run=False)
+
+
+class GitHubIssueProvider:
+    """Receipt-producing adapter used by the approval-controlled writer."""
+
+    def __init__(self, client: GitHubIssueClient) -> None:
+        self.client = client
+        self._counter = 0
+
+    def create(self, request: ToolRequest) -> ToolReceipt:
+        if not request.idempotency_key:
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR, "idempotency key is required"
+            )
+        args = request.arguments
+        repository = args.get("repository")
+        title = args.get("title")
+        body = args.get("body")
+        if not all(isinstance(item, str) for item in (repository, title, body)):
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR,
+                "repository, title and body are required",
+            )
+        repository_value = cast(str, repository)
+        title_value = cast(str, title)
+        body_value = cast(str, body)
+        labels_value = args.get("labels", [])
+        assignee = args.get("assignee")
+        labels_items = (
+            cast(list[object], labels_value) if isinstance(labels_value, list) else []
+        )
+        if not isinstance(labels_value, list) or not all(
+            isinstance(item, str) for item in labels_items
+        ):
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR, "labels must be a list of strings"
+            )
+        if assignee is not None and not isinstance(assignee, str):
+            raise DevBriefError(ErrorCode.VALIDATION_ERROR, "assignee must be a string")
+        labels = cast(list[str], labels_value)
+        try:
+            issue = self.client.create_issue(
+                repository=repository_value,
+                title=title_value,
+                body=body_value,
+                labels=labels,
+                assignee=assignee,
+            )
+        except GitHubError as exc:
+            message = str(exc)
+            code = (
+                ErrorCode.AUTH_ERROR
+                if "TOKEN" in message
+                else ErrorCode.TRANSIENT_PROVIDER_ERROR
+            )
+            raise DevBriefError(code, message) from exc
+        self._counter += 1
+        return ToolReceipt(
+            receipt_id=f"rcpt_github_{self._counter}",
+            tool_call_id=request.tool_call_id,
+            tool_name=request.tool_name,
+            status=ToolReceiptStatus.SUCCEEDED,
+            external_object_id=(
+                str(issue.number) if issue.number is not None else None
+            ),
+            external_url=issue.url,
+            provider_request_id=(
+                "dry-run" if issue.dry_run else f"github-{self._counter}"
+            ),
+            idempotency_key=request.idempotency_key,
+            created_at=datetime.now(UTC),
+        )
+
+    def query(self, request: ToolRequest) -> ToolReceipt | None:
+        """GitHub has no safe generic idempotency query in this adapter."""
+        del request
+        return None

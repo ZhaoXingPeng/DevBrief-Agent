@@ -1,0 +1,25 @@
+name: quality
+on:
+  push:
+  pull_request:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -e '.[dev]'
+      - run: pytest
+      - run: ruff format --check .
+      - run: ruff check .
+      - run: pyright
+      - run: python -m compileall -q src
+      - run: |
+          python - <<'PY'
+          from pathlib import Path
+          for path in [Path('README.md'), Path('CONTRIBUTING.md'), Path('SECURITY.md')]:
+              text = path.read_text(encoding='utf-8')
+              assert 'C:\\project\\百炼.txt' not in text
+          PY
