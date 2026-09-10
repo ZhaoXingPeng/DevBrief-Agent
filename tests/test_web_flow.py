@@ -165,6 +165,54 @@ def test_web_transcribes_verified_audio_and_removes_temporary_upload(
         server.server_close()
 
 
+def test_web_preserves_multipart_audio_bytes_before_transcription(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uploaded_content: list[bytes] = []
+
+    class MediaClient:
+        def transcribe(self, path: Path) -> TranscriptFixture:
+            uploaded_content.append(path.read_bytes())
+            return TranscriptFixture(
+                fixture_id="byte-preservation",
+                fixture_version="1.0.0",
+                redacted=True,
+                segments=[
+                    TranscriptSegment(
+                        segment_id="seg-1",
+                        start_ms=0,
+                        end_ms=1000,
+                        speaker="unknown",
+                        text="redacted decision",
+                    )
+                ],
+            )
+
+    original = b"RIFF\x00\x00\x00\x00WAVE\x00\xff\r\n-"
+    monkeypatch.setattr(web_module, "_media_client", MediaClient)
+    server = create_server(path=tmp_path / "runs.sqlite3", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        response = json.loads(
+            urlopen(
+                _multipart_request(
+                    base,
+                    "/api/transcribe",
+                    filename="preserved.wav",
+                    content_type="audio/wav",
+                    content=original,
+                )
+            ).read()
+        )
+        assert response["fixture_id"] == "byte-preservation"
+        assert uploaded_content == [original]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_web_serves_packaged_structured_audit_console(tmp_path: Path) -> None:
     server = create_server(path=tmp_path / "runs.sqlite3", port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
