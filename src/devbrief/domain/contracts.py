@@ -462,3 +462,6 @@ class TriageRunResult(StrictModel):
     draft: TaskDraft
     approval_status: ApprovalStatus
     budget: ExecutionBudget
+    approval_id: str | None = None
+    receipt: ToolReceipt | None = None
+    error: str | None = None
