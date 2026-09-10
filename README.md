@@ -25,10 +25,11 @@ Triage fixture，经过分析、证据上下文、任务计划、策略和人工
 ## 当前状态
 
 当前 main 已形成 Phase 1-5 集成版：包含 SQLite 运行记录与重启恢复、真实 GitHub Issues
-适配器、百炼 ASR/TTS、Vue Web UI、CLI、审批和回执恢复。测试默认使用固定 fixture 与 fake provider，
+适配器（含幂等查询）、百炼 ASR/TTS、Vue Web UI、CLI、审批和回执恢复。测试默认使用固定 fixture 与 fake provider，
 不需要凭据；GitHub 写入默认 dry-run，只有人工批准且显式配置 token 才会发起真实请求。
 
-真实 GitHub Issue 写入、百炼 ASR/TTS 和本地 Web Demo 已提供最小集成入口；生产鉴权、
+真实 GitHub Issue 写入、百炼 ASR/TTS 和本地 Web Demo 已提供最小集成入口；网络超时会保存
+`unknown_outcome` 并通过 `/api/recover` 查询；生产鉴权、
 实时流式 ASR、队列、多租户和部署仍需独立的 Design/Coding Issue。
 
 ## 能力闭环
@@ -121,10 +122,10 @@ devbrief speak "准备提交任务" --output briefing.wav
 - [x] Phase 3：真实 GitHub/百炼 provider、dry-run、凭据边界和失败恢复入口。
 - [x] Phase 4：评测基础、GitHub Actions CI、可观测 trace/checkpoint 摘要。
 - [x] Phase 5：音频上传、ASR 脱敏 fixture、TTS 播放和实时体验实验入口。
-- [ ] 后续：真实 provider 的幂等查询、生产鉴权、限流、多租户、实时流式 ASR 和更完整的仓库证据索引。
+- [ ] 后续：生产鉴权、限流、多租户、实时流式 ASR 和更完整的仓库证据索引。
 
-Web API 还提供 `POST /api/evidence`（工作区内有界文本证据）和 `POST /api/draft`
-（可配置任务系统 draft，默认 dry-run）。仓库证据只返回摘要、哈希和 `repo://` 引用，
+Web API 还提供 `POST /api/evidence`（工作区内有界文本证据）、`POST /api/draft`
+（可配置任务系统 draft，默认 dry-run）和 `POST /api/recover`（按幂等键 query-first 恢复未知外部结果）。仓库证据只返回摘要、哈希和 `repo://` 引用，
 不会把完整文件内容写入 trace 或数据库。
 
 Web 前端位于 `web/`，使用 Vue 3 + Vite 构建；`devbrief serve` 优先提供提交到包内的

@@ -13,8 +13,11 @@ from devbrief.domain.contracts import (
     Approval,
     ApprovalStatus,
     SessionState,
+    ToolReceipt,
+    ToolReceiptStatus,
 )
-from devbrief.integration.github import GitHubError
+from devbrief.integration import web as web_module
+from devbrief.integration.github import GitHubError, GitHubIssue
 from devbrief.integration.storage import SQLiteRunStore
 from devbrief.integration.web import create_server, github_client_from_environment
 
@@ -250,6 +253,99 @@ def test_web_restart_resumes_an_approved_executing_session(tmp_path: Path) -> No
         resumed = json.loads(urlopen(request).read())
         assert resumed["state"] == "completed"
         assert resumed["receipt"]["provider_request_id"] == "dry-run"
+    finally:
+        second.shutdown()
+        second.server_close()
+
+
+def test_web_recover_queries_persisted_unknown_github_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "runs.sqlite3"
+    first = create_server(path=database, port=0)
+    first_thread = threading.Thread(target=first.serve_forever, daemon=True)
+    first_thread.start()
+    try:
+        base = f"http://127.0.0.1:{first.server_port}"
+        payload = json.dumps(
+            {"path": "fixtures/transcripts/bug-triage-redacted-v1.json"}
+        ).encode()
+        result_payload = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/run",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+    finally:
+        first.shutdown()
+        first.server_close()
+
+    triage = SQLiteRunStore(database).get(result_payload["session_id"])
+    assert triage is not None
+    plan_hash = compute_plan_hash(triage.draft.plan)
+    approval = Approval(
+        approval_id=f"apr_{triage.session_id}",
+        plan_hash=plan_hash,
+        scope=["create_issue"],
+        approver_id="provider-recovery",
+        status=ApprovalStatus.CONSUMED,
+        expires_at=triage.budget.deadline_at,
+        created_at=triage.budget.deadline_at,
+    )
+    unknown = ToolReceipt(
+        receipt_id="rcpt_unknown",
+        tool_call_id=f"call_{triage.session_id}",
+        tool_name="create_issue",
+        status=ToolReceiptStatus.UNKNOWN_OUTCOME,
+        provider_request_id="github-unknown-1",
+        idempotency_key="idem-recovery-test",
+        created_at=triage.budget.deadline_at,
+    )
+    SQLiteRunStore(database).save(
+        triage.model_copy(
+            update={
+                "state": SessionState.EXECUTING,
+                "approval_status": ApprovalStatus.CONSUMED,
+                "approval_id": approval.approval_id,
+                "receipt": unknown,
+            }
+        ),
+        approval=approval,
+        receipt=unknown,
+    )
+
+    class QueryClient:
+        def find_issue_by_idempotency(
+            self, *, repository: str, idempotency_key: str
+        ) -> GitHubIssue | None:
+            assert repository == triage.draft.plan.repository
+            assert idempotency_key == unknown.idempotency_key
+            return GitHubIssue(
+                number=99,
+                url="https://github.com/owner/repository/issues/99",
+                title="Recovered",
+                dry_run=False,
+            )
+
+    monkeypatch.setattr(web_module, "github_client_from_environment", QueryClient)
+    second = create_server(path=database, port=0)
+    second_thread = threading.Thread(target=second.serve_forever, daemon=True)
+    second_thread.start()
+    try:
+        base = f"http://127.0.0.1:{second.server_port}"
+        request = Request(
+            f"{base}/api/recover",
+            data=json.dumps({"session_id": triage.session_id}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        recovered = json.loads(urlopen(request).read())
+        assert recovered["state"] == "completed"
+        assert recovered["receipt"]["external_object_id"] == "99"
     finally:
         second.shutdown()
         second.server_close()
