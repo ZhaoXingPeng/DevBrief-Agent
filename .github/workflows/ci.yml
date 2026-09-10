@@ -16,6 +16,7 @@ jobs:
       - run: ruff check .
       - run: pyright
       - run: python -m compileall -q src
+      - run: python tools/check_markdown_links.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

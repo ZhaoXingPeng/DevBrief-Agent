@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
 
-from devbrief.integration.web import create_server
+from devbrief.integration.github import GitHubError
+from devbrief.integration.web import create_server, github_client_from_environment
 
 
 def test_web_json_run_approve_and_history(tmp_path: Path) -> None:
@@ -105,3 +107,37 @@ def test_web_evidence_and_draft_endpoints(
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_web_approval_rejects_string_boolean(tmp_path: Path) -> None:
+    server = create_server(path=tmp_path / "runs.sqlite3", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        payload = json.dumps({"session_id": "missing", "approved": "false"}).encode()
+        request = Request(
+            f"{base}/api/approve",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(request)
+        assert b"approved must be a boolean" in error.value.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_web_live_github_rejects_when_repository_is_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEVBRIEF_GITHUB_DRY_RUN", "false")
+    monkeypatch.setenv("DEVBRIEF_GITHUB_TOKEN", "test-token")
+    monkeypatch.delenv("DEVBRIEF_GITHUB_REPOSITORY", raising=False)
+
+    with pytest.raises(GitHubError, match="scope"):
+        github_client_from_environment().create_issue(
+            repository="owner/repository", title="Task", body="Details"
+        )

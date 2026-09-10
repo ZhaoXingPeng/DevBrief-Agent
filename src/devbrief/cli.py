@@ -3,20 +3,43 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from devbrief.application.orchestration import BugTriageApplication
 from devbrief.domain.contracts import ExecutionBudget, Plan
-from devbrief.integration.media import OpenAICompatibleMediaClient
-from devbrief.integration.repository import WorkspaceRepositoryEvidence
-from devbrief.integration.task_system import TaskSystemDraftClient
+from devbrief.domain.errors import DevBriefError
+from devbrief.integration.media import MediaError, OpenAICompatibleMediaClient
+from devbrief.integration.repository import (
+    RepositoryEvidenceError,
+    WorkspaceRepositoryEvidence,
+)
+from devbrief.integration.task_system import TaskSystemDraftClient, TaskSystemError
 from devbrief.integration.web import create_server
 
 
-def main() -> None:
+def main() -> int:
+    try:
+        return _main()
+    except (
+        DevBriefError,
+        MediaError,
+        RepositoryEvidenceError,
+        TaskSystemError,
+        HTTPError,
+        URLError,
+        OSError,
+        ValueError,
+    ) as exc:
+        print(f"devbrief error: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser(prog="devbrief")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run", help="run one local fixture")
@@ -60,7 +83,7 @@ def main() -> None:
             ),
         )
         print(json.dumps(result.model_dump(mode="json"), ensure_ascii=False, indent=2))
-        return
+        return 0
     if args.command == "transcribe":
         fixture = _media_client().transcribe(args.path)
         payload = json.dumps(
@@ -70,11 +93,11 @@ def main() -> None:
             args.output.write_text(payload + "\n", encoding="utf-8")
         else:
             print(payload)
-        return
+        return 0
     if args.command == "speak":
         _media_client().synthesize(args.text, args.output, voice=args.voice)
         print(args.output)
-        return
+        return 0
     if args.command == "approve":
         payload = {
             "session_id": args.session_id,
@@ -91,11 +114,11 @@ def main() -> None:
         )
         with urlopen(request, timeout=30) as response:
             print(response.read().decode("utf-8"))
-        return
+        return 0
     if args.command == "evidence":
         result = WorkspaceRepositoryEvidence(Path.cwd()).read(args.path)
         print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
-        return
+        return 0
     if args.command == "draft":
         plan = Plan.model_validate(json.loads(args.plan.read_text(encoding="utf-8")))
         result = TaskSystemDraftClient(dry_run=not args.live).create_draft(plan)
@@ -108,10 +131,11 @@ def main() -> None:
                 }
             )
         )
-        return
+        return 0
     server = create_server(path=args.db, host=args.host, port=args.port)
     print(f"DevBrief Web Demo: http://{args.host}:{args.port}")
     server.serve_forever()
+    return 0
 
 
 def _media_client() -> OpenAICompatibleMediaClient:
@@ -120,3 +144,7 @@ def _media_client() -> OpenAICompatibleMediaClient:
         "https://llm-3v3kgqdr8b0jtkjh.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
     )
     return OpenAICompatibleMediaClient(base_url=base_url)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
