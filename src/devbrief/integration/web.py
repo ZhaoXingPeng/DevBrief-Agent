@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from devbrief.application.external_write import ControlledIssueWriter
+from devbrief.application.harness import Harness
 from devbrief.application.orchestration import BugTriageApplication
 from devbrief.application.receipts import InMemoryReceiptRepository
 from devbrief.domain.approval import (
@@ -24,13 +25,17 @@ from devbrief.domain.approval import (
 from devbrief.domain.contracts import (
     Approval,
     ApprovalStatus,
+    Checkpoint,
     ExecutionBudget,
     ExecutionKind,
     Plan,
     SessionState,
     ToolLevel,
+    ToolReceipt,
+    ToolReceiptStatus,
     ToolRequest,
     ToolSpec,
+    TraceSpan,
     TriageRunResult,
 )
 from devbrief.domain.errors import DevBriefError
@@ -63,12 +68,20 @@ HTML = """<!doctype html><html lang=zh-CN><head><meta charset=utf-8>
 
 class _Record:
     def __init__(
-        self, result: TriageRunResult, plan: Plan, application: BugTriageApplication
+        self,
+        result: TriageRunResult,
+        plan: Plan,
+        application: BugTriageApplication,
+        *,
+        approval: Approval | None = None,
+        receipt: ToolReceipt | None = None,
     ) -> None:
         self.result = result
         self.plan = plan
         self.application = application
         self.approvals = InMemoryApprovalRepository()
+        if approval is not None:
+            self.approvals.save(approval)
         spec = ToolSpec(
             name="create_issue",
             description="Create one GitHub Issue after approval",
@@ -91,6 +104,104 @@ class _Record:
             harness=application.harness,
         )
         self.approval: Approval | None = None
+        if receipt is not None:
+            self.writer.receipt_repository.save(
+                _request_for_record(
+                    result,
+                    plan,
+                    approval_id=approval.approval_id
+                    if approval
+                    else result.approval_id,
+                    idempotency_key=receipt.idempotency_key,
+                ),
+                receipt,
+            )
+        self.approval = approval
+
+
+def _request_for_record(
+    result: TriageRunResult,
+    plan: Plan,
+    *,
+    approval_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> ToolRequest:
+    plan_hash = compute_plan_hash(plan)
+    key = idempotency_key or (
+        "idem_"
+        + hashlib.sha256((result.session_id + plan_hash).encode()).hexdigest()[:24]
+    )
+    return ToolRequest(
+        tool_call_id=f"call_{result.session_id}",
+        tool_name=plan.tool_name,
+        arguments=plan.arguments,
+        session_id=result.session_id,
+        trace_id=result.trace_id,
+        approval_id=approval_id,
+        plan_hash=plan_hash,
+        idempotency_key=key,
+    )
+
+
+def _restore_record(store: SQLiteRunStore, session_id: str) -> _Record | None:
+    result = store.get(session_id)
+    if result is None:
+        return None
+    artifacts = store.get_artifacts(session_id)
+    approval = _parse_optional(Approval, artifacts.get("approval"))
+    receipt = _parse_optional(ToolReceipt, artifacts.get("receipt"))
+    traces = _parse_trace_spans(artifacts.get("traces"))
+    checkpoints = _parse_checkpoints(artifacts.get("checkpoints"))
+    harness = Harness()
+    harness.restore_session(
+        session_id=result.session_id,
+        trace_id=result.trace_id,
+        state=result.state,
+        budget=result.budget,
+        checkpoints=checkpoints,
+        traces=traces,
+    )
+    application = BugTriageApplication(harness=harness)
+    return _Record(
+        result,
+        result.draft.plan,
+        application,
+        approval=approval,
+        receipt=receipt,
+    )
+
+
+def _parse_optional(model: type[Any], value: object | None) -> Any | None:
+    if value is None:
+        return None
+    try:
+        return model.model_validate(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stored session artifact is invalid") from exc
+
+
+def _parse_trace_spans(value: object | None) -> tuple[TraceSpan, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("stored trace artifact is invalid")
+    items = cast(list[object], value)
+    try:
+        return tuple(TraceSpan.model_validate(item) for item in items)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stored trace artifact is invalid") from exc
+
+
+def _parse_checkpoints(value: object | None) -> tuple[Checkpoint, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError("stored checkpoint artifact is invalid")
+    items = cast(list[object], value)
+    try:
+        return tuple(Checkpoint.model_validate(item) for item in items)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stored checkpoint artifact is invalid") from exc
 
 
 def create_server(
@@ -249,16 +360,14 @@ def create_server(
             if not isinstance(approved_value, bool):
                 raise ValueError("approved must be a boolean")
             approved = approved_value
-            record = records.get(session_id)
+            record = records.get(session_id) or _restore_record(store, session_id)
             if record is None:
-                record_result = store.get(session_id)
-                if record_result is None:
-                    raise ValueError("session does not exist")
-                raise ValueError(
-                    "session is not active; restart requires a new approval"
-                )
+                raise ValueError("session does not exist")
+            records[session_id] = record
             approver = str(payload.get("approver_id", "human"))
             if not approved:
+                if record.result.state is not SessionState.AWAITING_APPROVAL:
+                    raise ValueError("session is not awaiting approval")
                 record.approval = Approval(
                     approval_id=f"apr_{session_id}",
                     plan_hash=compute_plan_hash(record.plan),
@@ -292,29 +401,58 @@ def create_server(
             expected_hash = compute_plan_hash(record.plan)
             if payload.get("plan_hash") not in (None, expected_hash):
                 raise ValueError("plan hash does not match current plan")
-            record.approval = Approval(
-                approval_id=f"apr_{session_id}",
-                plan_hash=expected_hash,
-                scope=["create_issue"],
-                approver_id=approver,
-                status=ApprovalStatus.APPROVED,
-                expires_at=datetime.now(UTC) + timedelta(minutes=15),
-                created_at=datetime.now(UTC),
-            )
-            record.approvals.save(record.approval)
-            record.application.harness.transition(session_id, SessionState.EXECUTING)
-            request = ToolRequest(
-                tool_call_id=f"call_{session_id}",
-                tool_name="create_issue",
-                arguments=record.plan.arguments,
-                session_id=session_id,
-                trace_id=record.result.trace_id,
-                approval_id=record.approval.approval_id,
-                plan_hash=expected_hash,
-                idempotency_key=f"idem_{hashlib.sha256((session_id + expected_hash).encode()).hexdigest()[:24]}",
+            if record.result.state is SessionState.EXECUTING:
+                if (
+                    record.approval is None
+                    or record.approval.status is not ApprovalStatus.APPROVED
+                    or record.approval.plan_hash != expected_hash
+                ):
+                    raise ValueError("executing session has no recoverable approval")
+            elif record.result.state is SessionState.AWAITING_APPROVAL:
+                record.approval = Approval(
+                    approval_id=f"apr_{session_id}",
+                    plan_hash=expected_hash,
+                    scope=["create_issue"],
+                    approver_id=approver,
+                    status=ApprovalStatus.APPROVED,
+                    expires_at=datetime.now(UTC) + timedelta(minutes=15),
+                    created_at=datetime.now(UTC),
+                )
+                record.approvals.save(record.approval)
+                record.application.harness.transition(
+                    session_id, SessionState.EXECUTING
+                )
+                record.result = record.result.model_copy(
+                    update={
+                        "state": SessionState.EXECUTING,
+                        "approval_status": ApprovalStatus.APPROVED,
+                        "approval_id": record.approval.approval_id,
+                    }
+                )
+                store.save(
+                    record.result,
+                    approval=record.approval,
+                    traces=record.application.harness.traces.list_for(
+                        record.result.trace_id
+                    ),
+                    checkpoints=record.application.harness.checkpoints.list_for(
+                        session_id
+                    ),
+                )
+            else:
+                raise ValueError("session is not awaiting approval")
+            request = _request_for_record(
+                record.result, record.plan, approval_id=record.approval.approval_id
             )
             outcome = record.writer.execute(request, record.plan)
-            if outcome.allowed and outcome.receipt is not None:
+            record.approval = record.approval.model_copy(
+                update={"status": ApprovalStatus.CONSUMED}
+            )
+            if (
+                outcome.allowed
+                and outcome.receipt is not None
+                and outcome.receipt.status is ToolReceiptStatus.SUCCEEDED
+            ):
                 record.application.harness.transition(
                     session_id, SessionState.COMPLETED
                 )
@@ -332,7 +470,7 @@ def create_server(
                         "state": SessionState.EXECUTING,
                         "approval_status": record.approval.status,
                         "approval_id": record.approval.approval_id,
-                        "error": outcome.reason,
+                        "error": outcome.reason or "external write outcome is unknown",
                     }
                 )
             store.save(
@@ -399,20 +537,11 @@ def create_server(
             )
 
         def _run_detail(self, session_id: str) -> None:
-            record = records.get(session_id)
+            record = records.get(session_id) or _restore_record(store, session_id)
             if record is None:
-                result = store.get(session_id)
-                if result is None:
-                    self._send(404, {"error": "session does not exist"})
-                    return
-                self._send(
-                    200,
-                    {
-                        "result": result.model_dump(mode="json"),
-                        "artifacts": store.get_artifacts(session_id),
-                    },
-                )
+                self._send(404, {"error": "session does not exist"})
                 return
+            records[session_id] = record
             self._send(200, _public_result(record))
 
         def _request_parts(

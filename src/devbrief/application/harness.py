@@ -45,6 +45,10 @@ class InMemoryCheckpointRepository:
     def list_for(self, session_id: str) -> tuple[Checkpoint, ...]:
         return tuple(self._items.get(session_id, []))
 
+    def restore(self, session_id: str, checkpoints: tuple[Checkpoint, ...]) -> None:
+        """Restore validated checkpoints loaded from a durable run store."""
+        self._items[session_id] = list(checkpoints)
+
 
 class InMemoryTraceStore:
     """Append-only, redacted trace storage for the fake runtime."""
@@ -57,6 +61,10 @@ class InMemoryTraceStore:
 
     def list_for(self, trace_id: str) -> tuple[TraceSpan, ...]:
         return tuple(self._items.get(trace_id, []))
+
+    def restore(self, trace_id: str, spans: tuple[TraceSpan, ...]) -> None:
+        """Restore validated spans loaded from a durable run store."""
+        self._items[trace_id] = list(spans)
 
 
 class Harness:
@@ -83,6 +91,41 @@ class Harness:
         self._sessions[session_id] = session
         self._trace_state(session, None, SessionState.CREATED, output="session created")
         self._write_checkpoint(session)
+        return session
+
+    def restore_session(
+        self,
+        *,
+        session_id: str,
+        trace_id: str,
+        state: SessionState,
+        budget: ExecutionBudget,
+        checkpoints: tuple[Checkpoint, ...] = (),
+        traces: tuple[TraceSpan, ...] = (),
+    ) -> Session:
+        """Rehydrate one validated session and its audit indexes after restart."""
+        if session_id in self._sessions:
+            raise DevBriefError(ErrorCode.VALIDATION_ERROR, "session id already exists")
+        if any(item.session_id != session_id for item in (*checkpoints, *traces)):
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR,
+                "restored artifacts belong to another session",
+            )
+        if any(item.trace_id != trace_id for item in traces):
+            raise DevBriefError(
+                ErrorCode.VALIDATION_ERROR, "restored trace belongs to another trace"
+            )
+        session = Session(
+            session_id=session_id,
+            trace_id=trace_id,
+            state=state,
+            budget=budget,
+        )
+        self._sessions[session_id] = session
+        self.checkpoints.restore(session_id, checkpoints)
+        self.traces.restore(trace_id, traces)
+        self._checkpoint_counter = max(self._checkpoint_counter, len(checkpoints))
+        self._span_counter = max(self._span_counter, len(traces))
         return session
 
     def get_session(self, session_id: str) -> Session:
