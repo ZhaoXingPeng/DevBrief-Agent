@@ -777,7 +777,13 @@ def _multipart(
     fields: dict[str, str] = {}
     files: dict[str, tuple[str, bytes, str]] = {}
     for chunk in body.split(boundary)[1:]:
-        chunk = chunk.strip(b"\r\n-")
+        if chunk.startswith(b"--"):
+            break
+        if not chunk.startswith(b"\r\n"):
+            continue
+        chunk = chunk[2:]
+        if chunk.endswith(b"\r\n"):
+            chunk = chunk[:-2]
         if not chunk or b"\r\n\r\n" not in chunk:
             continue
         raw_headers, value = chunk.split(b"\r\n\r\n", 1)
@@ -804,7 +810,7 @@ def _multipart(
             "text/plain",
         )
         if file_match:
-            files[name] = (file_match.group(1), value.rstrip(b"\r\n"), ctype)
+            files[name] = (file_match.group(1), value, ctype)
         else:
-            fields[name] = value.rstrip(b"\r\n").decode("utf-8")
+            fields[name] = value.decode("utf-8")
     return fields, files
