@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import tempfile
@@ -36,12 +37,15 @@ from devbrief.domain.errors import DevBriefError
 from devbrief.domain.tools import PolicyGate, ToolRegistry
 from devbrief.integration.github import GitHubIssueClient, GitHubIssueProvider
 from devbrief.integration.media import MediaError, OpenAICompatibleMediaClient
+from devbrief.integration.repository import WorkspaceRepositoryEvidence
 from devbrief.integration.storage import SQLiteRunStore
+from devbrief.integration.task_system import TaskSystemDraftClient
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 DEFAULT_BASE_URL = (
     "https://llm-3v3kgqdr8b0jtkjh.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 )
+STATIC_DIR = Path(__file__).with_name("static")
 
 HTML = """<!doctype html><html lang=zh-CN><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>DevBrief Agent</title>
@@ -51,9 +55,10 @@ HTML = """<!doctype html><html lang=zh-CN><head><meta charset=utf-8>
 <section><h2>运行 Triage</h2><form @submit.prevent="run"><div class=row><input type=file ref=file accept=".json,audio/*"><input v-model="path" placeholder="fixture 路径"></div><button :disabled="busy">{{ busy?'运行中...':'运行' }}</button></form><p class=muted>支持脱敏 JSON fixture 或音频上传，上传内容仅在临时文件中处理。</p></section>
 <section><h2>审批与 Issue</h2><input v-model="sessionId" placeholder="session_id"><input v-model="approver" placeholder="审批人"><div><button @click="approve(true)" :disabled="!sessionId">批准并执行</button><button class="danger" @click="approve(false)" :disabled="!sessionId">拒绝</button></div></section>
 <section><h2>语音播报</h2><form @submit.prevent="speak"><input v-model="speech" style="width:70%"><button>生成语音</button></form><audio ref=player controls></audio></section>
+<section><h2>仓库证据</h2><form @submit.prevent="evidence"><input v-model="evidencePath" placeholder="README.md"><button>读取证据</button></form></section>
 <section><h2>运行历史</h2><button class=secondary @click="loadRuns">刷新</button><pre>{{ JSON.stringify(runs,null,2) }}</pre></section>
 <section class=wide><h2>运行详情</h2><pre>{{ JSON.stringify(output,null,2) }}</pre></section>
-</main></div><script>const{createApp}=Vue;createApp({data:()=>({health:'检查中...',busy:false,path:'fixtures/transcripts/bug-triage-redacted-v1.json',sessionId:'',approver:'human-web',speech:'准备提交任务',output:{},runs:[]}),mounted(){fetch('/health').then(r=>r.json()).then(x=>this.health=x.status).catch(()=>this.health='不可用')},methods:{async run(){this.busy=true;try{const form=new FormData(),file=this.$refs.file.files[0];let r;if(file){form.append('file',file);r=await fetch('/api/run',{method:'POST',body:form})}else{r=await fetch('/api/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:this.path})})}this.output=await r.json();if(this.output.session_id)this.sessionId=this.output.session_id;this.loadRuns()}finally{this.busy=false}},async approve(approved){const r=await fetch('/api/approve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session_id:this.sessionId,approver_id:this.approver,approved,plan_hash:this.output.plan_hash})});this.output=await r.json();this.loadRuns()},async loadRuns(){const r=await fetch('/api/runs');this.runs=(await r.json()).runs||[]},async speak(){const r=await fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:this.speech})});if(r.ok)this.$refs.player.src=URL.createObjectURL(await r.blob());else this.output=await r.json()}}}).mount('#app');</script></body></html>"""
+</main></div><script>const{createApp}=Vue;createApp({data:()=>({health:'检查中...',busy:false,path:'fixtures/transcripts/bug-triage-redacted-v1.json',evidencePath:'README.md',sessionId:'',approver:'human-web',speech:'准备提交任务',output:{},runs:[]}),mounted(){fetch('/health').then(r=>r.json()).then(x=>this.health=x.status).catch(()=>this.health='不可用')},methods:{async run(){this.busy=true;try{const form=new FormData(),file=this.$refs.file.files[0];let r;if(file){form.append('file',file);r=await fetch('/api/run',{method:'POST',body:form})}else{r=await fetch('/api/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:this.path})})}this.output=await r.json();if(this.output.session_id)this.sessionId=this.output.session_id;this.loadRuns()}finally{this.busy=false}},async approve(approved){const r=await fetch('/api/approve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session_id:this.sessionId,approver_id:this.approver,approved,plan_hash:this.output.plan_hash})});this.output=await r.json();this.loadRuns()},async evidence(){const r=await fetch('/api/evidence',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:this.evidencePath})});this.output=await r.json()},async loadRuns(){const r=await fetch('/api/runs');this.runs=(await r.json()).runs||[]},async speak(){const r=await fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:this.speech})});if(r.ok)this.$refs.player.src=URL.createObjectURL(await r.blob());else this.output=await r.json()}}}).mount('#app');</script></body></html>"""
 
 
 class _Record:
@@ -103,11 +108,35 @@ def create_server(
                 self._send(200, {"runs": list(store.list_metadata())})
             elif route.startswith("/api/runs/"):
                 self._run_detail(route.rsplit("/", 1)[-1])
+            elif route == "/" and (STATIC_DIR / "index.html").is_file():
+                self._send_static("index.html")
+            elif (
+                route.startswith("/assets/")
+                and (STATIC_DIR / route.lstrip("/")).is_file()
+            ):
+                self._send_static(route.lstrip("/"))
             else:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(HTML.encode("utf-8"))
+
+        def _send_static(self, relative_path: str) -> None:
+            target = (STATIC_DIR / relative_path).resolve()
+            if target != STATIC_DIR and STATIC_DIR not in target.parents:
+                self._send(404, {"error": "not found"})
+                return
+            body = target.read_bytes()
+            content_type = (
+                mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            )
+            if content_type.startswith("text/"):
+                content_type += "; charset=utf-8"
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def do_POST(self) -> None:  # noqa: N802
             route = self.path.split("?", 1)[0]
@@ -120,6 +149,10 @@ def create_server(
                     self._approve()
                 elif route == "/api/speak":
                     self._speak()
+                elif route == "/api/evidence":
+                    self._evidence()
+                elif route == "/api/draft":
+                    self._draft()
                 else:
                     self._send(404, {"error": "not found"})
             except (KeyError, TypeError, ValueError, DevBriefError, MediaError) as exc:
@@ -326,6 +359,39 @@ def create_server(
                 self.wfile.write(body)
             finally:
                 target.unlink(missing_ok=True)
+
+        def _evidence(self) -> None:
+            payload = self._json()
+            evidence = WorkspaceRepositoryEvidence(Path.cwd()).read(
+                str(payload["path"])
+            )
+            self._send(
+                200,
+                {
+                    "reference": evidence.reference,
+                    "path": evidence.path,
+                    "digest": evidence.digest,
+                    "summary": evidence.summary,
+                    "bytes_read": evidence.bytes_read,
+                },
+            )
+
+        def _draft(self) -> None:
+            payload = self._json()
+            plan_payload = payload.get("plan")
+            if not isinstance(plan_payload, dict):
+                raise ValueError("plan object is required")
+            draft = TaskSystemDraftClient(
+                dry_run=bool(payload.get("dry_run", True))
+            ).create_draft(Plan.model_validate(plan_payload))
+            self._send(
+                200,
+                {
+                    "draft_id": draft.draft_id,
+                    "url": draft.url,
+                    "dry_run": draft.dry_run,
+                },
+            )
 
         def _run_detail(self, session_id: str) -> None:
             record = records.get(session_id)

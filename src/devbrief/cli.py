@@ -3,13 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 from devbrief.application.orchestration import BugTriageApplication
-from devbrief.domain.contracts import ExecutionBudget
+from devbrief.domain.contracts import ExecutionBudget, Plan
 from devbrief.integration.media import OpenAICompatibleMediaClient
+from devbrief.integration.repository import WorkspaceRepositoryEvidence
+from devbrief.integration.task_system import TaskSystemDraftClient
 from devbrief.integration.web import create_server
 
 
@@ -37,6 +40,13 @@ def main() -> None:
     approve.add_argument("--plan-hash")
     approve.add_argument("--url", default="http://127.0.0.1:8000")
     approve.add_argument("--reject", action="store_true")
+    evidence = subparsers.add_parser(
+        "evidence", help="read bounded repository evidence"
+    )
+    evidence.add_argument("path")
+    draft = subparsers.add_parser("draft", help="create a task-system draft")
+    draft.add_argument("plan", type=Path, help="JSON Plan payload")
+    draft.add_argument("--live", action="store_true")
     args = parser.parse_args()
     if args.command == "run":
         result = BugTriageApplication().run(
@@ -81,6 +91,23 @@ def main() -> None:
         )
         with urlopen(request, timeout=30) as response:
             print(response.read().decode("utf-8"))
+        return
+    if args.command == "evidence":
+        result = WorkspaceRepositoryEvidence(Path.cwd()).read(args.path)
+        print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
+        return
+    if args.command == "draft":
+        plan = Plan.model_validate(json.loads(args.plan.read_text(encoding="utf-8")))
+        result = TaskSystemDraftClient(dry_run=not args.live).create_draft(plan)
+        print(
+            json.dumps(
+                {
+                    "draft_id": result.draft_id,
+                    "url": result.url,
+                    "dry_run": result.dry_run,
+                }
+            )
+        )
         return
     server = create_server(path=args.db, host=args.host, port=args.port)
     print(f"DevBrief Web Demo: http://{args.host}:{args.port}")
