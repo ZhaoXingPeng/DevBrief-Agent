@@ -10,9 +10,13 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from devbrief.application.evaluation import (
+    DeterministicEvalService,
+    load_eval_artifact,
+)
 from devbrief.application.orchestration import BugTriageApplication
 from devbrief.domain.contracts import ExecutionBudget, Plan
-from devbrief.domain.errors import DevBriefError
+from devbrief.domain.errors import DevBriefError, ErrorCode
 from devbrief.integration.media import MediaError, OpenAICompatibleMediaClient
 from devbrief.integration.repository import (
     RepositoryEvidenceError,
@@ -70,6 +74,20 @@ def _main() -> int:
     draft = subparsers.add_parser("draft", help="create a task-system draft")
     draft.add_argument("plan", type=Path, help="JSON Plan payload")
     draft.add_argument("--live", action="store_true")
+    evaluation = subparsers.add_parser(
+        "eval", help="run the versioned deterministic Eval baseline"
+    )
+    evaluation.add_argument(
+        "--dataset",
+        type=Path,
+        default=Path("fixtures/evals/bug-triage-v1.json"),
+        help="versioned public evaluation dataset",
+    )
+    evaluation_output = evaluation.add_mutually_exclusive_group()
+    evaluation_output.add_argument("--output", type=Path)
+    evaluation_output.add_argument(
+        "--check", type=Path, help="fail when the result differs from a baseline"
+    )
     args = parser.parse_args()
     if args.command == "run":
         result = BugTriageApplication().run(
@@ -131,6 +149,22 @@ def _main() -> int:
                 }
             )
         )
+        return 0
+    if args.command == "eval":
+        artifact = DeterministicEvalService().run(args.dataset)
+        if args.check:
+            expected = load_eval_artifact(args.check)
+            if artifact != expected:
+                raise DevBriefError(
+                    ErrorCode.CONFLICT,
+                    "evaluation report does not match the committed baseline",
+                )
+        payload = artifact.model_dump_json(indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8")
+        else:
+            print(payload, end="")
         return 0
     server = create_server(path=args.db, host=args.host, port=args.port)
     print(f"DevBrief Web Demo: http://{args.host}:{args.port}")

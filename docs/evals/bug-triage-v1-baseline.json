@@ -1,0 +1,30 @@
+{
+  "dataset_id": "bug-triage-fake-baseline",
+  "dataset_version": "1.0.0",
+  "report": {
+    "sample_version": "1.0.0",
+    "model_version": "fake-rule-analyzer-1.0.0",
+    "prompt_version": "not-applicable-deterministic-1.0.0",
+    "sample_count": 2,
+    "candidate_precision": 1.0,
+    "candidate_recall": 1.0,
+    "candidate_f1": 1.0,
+    "field_accuracy": {
+      "kind": 1.0,
+      "statement": 1.0,
+      "owner": 1.0,
+      "due_at": 1.0,
+      "priority": 1.0,
+      "acceptance_criteria": 1.0,
+      "status": 1.0
+    },
+    "evidence_coverage": 1.0,
+    "failure_counts": {
+      "missing_candidate": 0,
+      "unexpected_candidate": 0,
+      "duplicate_candidate_id": 0,
+      "field_mismatch": 0,
+      "no_evidence": 0
+    }
+  }
+}
