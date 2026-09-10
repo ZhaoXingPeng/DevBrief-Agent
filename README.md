@@ -24,9 +24,9 @@ Triage fixture，经过分析、证据上下文、任务计划、策略和人工
 
 ## 当前状态
 
-Phase 1 本地 Harness 已完成并进入 `main`：当前包含 SQLite 运行记录、GitHub Issues
-适配器、CLI 和本地 Web Demo。测试使用固定 fixture 与 fake provider，不需要凭据；GitHub
-和百炼网络调用都必须显式配置，GitHub 写入默认 dry-run。
+当前 main 已形成 Phase 1-5 集成版：包含 SQLite 运行记录、真实 GitHub Issues 适配器、
+百炼 ASR/TTS、Vue Web UI、CLI、审批和回执恢复。测试默认使用固定 fixture 与 fake provider，
+不需要凭据；GitHub 写入默认 dry-run，只有人工批准且显式配置 token 才会发起真实请求。
 
 真实 GitHub Issue 写入、百炼 ASR/TTS 和本地 Web Demo 已提供最小集成入口；生产鉴权、
 实时流式 ASR、队列、多租户和部署仍需独立的 Design/Coding Issue。
@@ -41,7 +41,7 @@ Phase 1 本地 Harness 已完成并进入 `main`：当前包含 SQLite 运行记
   -> 证据绑定的任务计划与稳定 plan hash
   -> canonical Tool Registry + Policy Gate
   -> 精确、可过期的一次性人工审批
-  -> Fake Issue external-write（写前意图 checkpoint）
+  -> GitHub Issue external-write（写前意图 checkpoint，dry-run 默认）
   -> ToolReceipt、幂等重放、unknown outcome query-first 恢复
 ```
 
@@ -78,6 +78,7 @@ Phase 1 本地 Harness 已完成并进入 `main`：当前包含 SQLite 运行记
 python -m pip install -e ".[dev]"
 devbrief run fixtures/transcripts/bug-triage-redacted-v1.json
 devbrief serve --port 8000
+devbrief approve <session_id> --url http://127.0.0.1:8000
 pytest
 ruff format --check .
 ruff check .
@@ -93,7 +94,8 @@ devbrief transcribe meeting.wav --output transcript.json
 devbrief speak "准备提交任务" --output briefing.wav
 ```
 
-真实 GitHub 写入需要显式关闭 dry-run 并设置 `DEVBRIEF_GITHUB_TOKEN`；代码中不保存密钥。
+真实 GitHub 写入需要设置 `DEVBRIEF_GITHUB_DRY_RUN=false`、`DEVBRIEF_GITHUB_TOKEN` 和
+`DEVBRIEF_GITHUB_REPOSITORY=owner/name`；代码、日志、trace 和 SQLite 都不保存密钥。
 若尚未安装 editable package，
 可用 `PYTHONPATH=src pytest` 运行测试。
 
@@ -112,10 +114,11 @@ devbrief speak "准备提交任务" --output briefing.wav
 ## 路线图
 
 - [x] Phase 1：无凭据 Harness、fixture、分析、计划、策略、审批、回执、回放和 fake external-write。
-- [x] Phase 2 起步：SQLite、GitHub Issues adapter、百炼 ASR/TTS adapter 和本地 Web Demo。
-- [ ] Phase 2 完整化：仓库证据适配器、审批 UI 和可配置的任务系统 draft API。
-- [ ] Phase 3：真实 provider 的生产级鉴权、审计、限流和失败恢复。
-- [ ] Phase 4：评测报告、CI 部署、可观测性和实时音频体验。
+- [x] Phase 2：SQLite、GitHub Issues、仓库范围校验、审批 UI 和任务 draft API。
+- [x] Phase 3：真实 GitHub/百炼 provider、dry-run、凭据边界和失败恢复入口。
+- [x] Phase 4：评测基础、GitHub Actions CI、可观测 trace/checkpoint 摘要。
+- [x] Phase 5：音频上传、ASR 脱敏 fixture、TTS 播放和实时体验实验入口。
+- [ ] 后续：生产鉴权、限流、多租户、实时流式 ASR 和更完整的仓库证据索引。
 
 ## 参与开发
 

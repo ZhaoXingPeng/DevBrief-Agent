@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import cast
+from typing import Protocol, cast
 
 from devbrief.application.harness import Harness
 from devbrief.application.receipts import (
@@ -24,6 +24,10 @@ from devbrief.domain.tools import PolicyGate, ToolRegistry
 from devbrief.domain.trace import redact_summary
 
 Clock = Callable[[], datetime]
+
+
+class ReceiptProvider(ReceiptQueryAdapter, Protocol):
+    def create(self, request: ToolRequest) -> ToolReceipt: ...
 
 
 class FakeIssueProvider(ReceiptQueryAdapter):
@@ -102,7 +106,7 @@ class ControlledIssueWriter:
         policy: PolicyGate,
         approval_gate: ApprovalGate,
         receipt_repository: InMemoryReceiptRepository,
-        provider: FakeIssueProvider,
+        provider: ReceiptProvider,
         harness: Harness,
     ) -> None:
         self.registry = registry

@@ -5,6 +5,7 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from devbrief.application.orchestration import BugTriageApplication
 from devbrief.domain.contracts import ExecutionBudget
@@ -28,6 +29,14 @@ def main() -> None:
     speak.add_argument("text")
     speak.add_argument("--output", type=Path, required=True)
     speak.add_argument("--voice", default="Cherry")
+    approve = subparsers.add_parser(
+        "approve", help="approve or reject a pending web run"
+    )
+    approve.add_argument("session_id")
+    approve.add_argument("--approver", default="human-cli")
+    approve.add_argument("--plan-hash")
+    approve.add_argument("--url", default="http://127.0.0.1:8000")
+    approve.add_argument("--reject", action="store_true")
     args = parser.parse_args()
     if args.command == "run":
         result = BugTriageApplication().run(
@@ -55,6 +64,23 @@ def main() -> None:
     if args.command == "speak":
         _media_client().synthesize(args.text, args.output, voice=args.voice)
         print(args.output)
+        return
+    if args.command == "approve":
+        payload = {
+            "session_id": args.session_id,
+            "approver_id": args.approver,
+            "approved": not args.reject,
+        }
+        if args.plan_hash:
+            payload["plan_hash"] = args.plan_hash
+        request = Request(
+            f"{args.url.rstrip('/')}/api/approve",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=30) as response:
+            print(response.read().decode("utf-8"))
         return
     server = create_server(path=args.db, host=args.host, port=args.port)
     print(f"DevBrief Web Demo: http://{args.host}:{args.port}")
