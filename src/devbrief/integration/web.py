@@ -258,6 +258,8 @@ def create_server(
                     self._transcribe()
                 elif route == "/api/approve":
                     self._approve()
+                elif route == "/api/recover":
+                    self._recover()
                 elif route == "/api/speak":
                     self._speak()
                 elif route == "/api/evidence":
@@ -470,7 +472,65 @@ def create_server(
                         "state": SessionState.EXECUTING,
                         "approval_status": record.approval.status,
                         "approval_id": record.approval.approval_id,
+                        "receipt": outcome.receipt,
                         "error": outcome.reason or "external write outcome is unknown",
+                    }
+                )
+            store.save(
+                record.result,
+                approval=record.approval,
+                receipt=outcome.receipt,
+                traces=record.application.harness.traces.list_for(
+                    record.result.trace_id
+                ),
+                checkpoints=record.application.harness.checkpoints.list_for(session_id),
+            )
+            self._send(
+                200,
+                _public_result(record) | {"outcome": outcome.model_dump(mode="json")},
+            )
+
+        def _recover(self) -> None:
+            payload = self._json()
+            session_id = str(payload["session_id"])
+            record = records.get(session_id) or _restore_record(store, session_id)
+            if record is None:
+                raise ValueError("session does not exist")
+            records[session_id] = record
+            if record.result.state is not SessionState.EXECUTING:
+                raise ValueError("session is not awaiting provider recovery")
+            request = _request_for_record(
+                record.result,
+                record.plan,
+                approval_id=record.approval.approval_id if record.approval else None,
+                idempotency_key=(
+                    record.result.receipt.idempotency_key
+                    if record.result.receipt is not None
+                    else None
+                ),
+            )
+            outcome = record.writer.recover(request)
+            if (
+                outcome.allowed
+                and outcome.receipt is not None
+                and outcome.receipt.status is ToolReceiptStatus.SUCCEEDED
+            ):
+                record.application.harness.transition(
+                    session_id, SessionState.COMPLETED
+                )
+                record.result = record.result.model_copy(
+                    update={
+                        "state": SessionState.COMPLETED,
+                        "receipt": outcome.receipt,
+                        "error": None,
+                    }
+                )
+            else:
+                record.result = record.result.model_copy(
+                    update={
+                        "state": SessionState.EXECUTING,
+                        "receipt": outcome.receipt,
+                        "error": outcome.reason,
                     }
                 )
             store.save(

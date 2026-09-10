@@ -57,6 +57,14 @@ createApp({
       }))
       await loadRuns()
     }
+    const recover = async () => {
+      setOutput(await requestJson('/api/recover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId.value }),
+      }))
+      await loadRuns()
+    }
     const evidence = async () => {
       setOutput(await requestJson('/api/evidence', {
         method: 'POST',
@@ -76,14 +84,14 @@ createApp({
     }
 
     requestJson('/health').then((value) => { health.value = value.status }).catch(() => { health.value = '不可用' })
-    return { approve, approver, audioUrl, busy, evidence, evidencePath, health, loadRuns, output, path, run, runs, sessionId, speak, speech }
+    return { approve, approver, audioUrl, busy, evidence, evidencePath, health, loadRuns, output, path, recover, run, runs, sessionId, speak, speech }
   },
   template: `
     <header><div><strong>DevBrief Agent</strong><span>Evidence-driven task control</span></div><em>{{ health }}</em></header>
     <main>
       <section><h1>研发决策控制台</h1><p>从脱敏 fixture 或音频生成可审阅任务，明确批准后才允许创建 Issue。</p></section>
       <section><h2>输入</h2><form @submit.prevent="run"><input name="file" type="file" accept=".json,audio/*"><input v-model="path" aria-label="fixture path"><button :disabled="busy">{{ busy ? '处理中' : '运行 Triage' }}</button></form></section>
-      <section><h2>审批</h2><input v-model="sessionId" placeholder="session id"><input v-model="approver" placeholder="approver"><button @click="approve(true)" :disabled="!sessionId">批准并执行</button><button class="danger" @click="approve(false)" :disabled="!sessionId">拒绝</button></section>
+      <section><h2>审批</h2><input v-model="sessionId" placeholder="session id"><input v-model="approver" placeholder="approver"><button @click="approve(true)" :disabled="!sessionId">批准并执行</button><button class="danger" @click="approve(false)" :disabled="!sessionId">拒绝</button><button class="secondary" @click="recover" :disabled="!sessionId">查询未知结果</button></section>
       <section><h2>证据</h2><form @submit.prevent="evidence"><input v-model="evidencePath" aria-label="repository path"><button>读取工作区证据</button></form></section>
       <section><h2>语音</h2><form @submit.prevent="speak"><input v-model="speech" aria-label="speech text"><button>生成</button></form><audio v-if="audioUrl" :src="audioUrl" controls></audio></section>
       <section><h2>运行记录</h2><button class="secondary" @click="loadRuns">刷新</button><pre>{{ JSON.stringify(runs, null, 2) }}</pre></section>
