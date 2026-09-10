@@ -87,7 +87,7 @@ class _Record:
             policy=PolicyGate(registry),
             approval_gate=ApprovalGate(self.approvals),
             receipt_repository=InMemoryReceiptRepository(),
-            provider=GitHubIssueProvider(_github_client()),
+            provider=GitHubIssueProvider(github_client_from_environment()),
             harness=application.harness,
         )
         self.approval: Approval | None = None
@@ -245,6 +245,10 @@ def create_server(
         def _approve(self) -> None:
             payload = self._json()
             session_id = str(payload["session_id"])
+            approved_value = payload.get("approved", False)
+            if not isinstance(approved_value, bool):
+                raise ValueError("approved must be a boolean")
+            approved = approved_value
             record = records.get(session_id)
             if record is None:
                 record_result = store.get(session_id)
@@ -254,7 +258,6 @@ def create_server(
                     "session is not active; restart requires a new approval"
                 )
             approver = str(payload.get("approver_id", "human"))
-            approved = bool(payload.get("approved", False))
             if not approved:
                 record.approval = Approval(
                     approval_id=f"apr_{session_id}",
@@ -348,7 +351,9 @@ def create_server(
 
         def _speak(self) -> None:
             text = str(self._json()["text"])
-            target = Path(tempfile.mkstemp(suffix=".mp3")[1])
+            handle, filename = tempfile.mkstemp(suffix=".mp3")
+            os.close(handle)
+            target = Path(filename)
             try:
                 _media_client().synthesize(text, target)
                 body = target.read_bytes()
@@ -494,9 +499,18 @@ def _public_result(record: _Record) -> dict[str, object]:
     return result
 
 
-def _github_client() -> GitHubIssueClient:
+def github_client_from_environment() -> GitHubIssueClient:
+    """Build the GitHub client with a zero-write scope until a repo is configured."""
     value = os.getenv("DEVBRIEF_GITHUB_DRY_RUN", "true").casefold()
-    return GitHubIssueClient(dry_run=value not in {"0", "false", "no"})
+    dry_run = value not in {"0", "false", "no"}
+    repository = os.getenv("DEVBRIEF_GITHUB_REPOSITORY")
+    allowed: set[str] | frozenset[str] | None = (
+        {repository} if repository else (None if dry_run else frozenset[str]())
+    )
+    return GitHubIssueClient(
+        dry_run=dry_run,
+        allowed_repositories=allowed,
+    )
 
 
 def _media_client() -> OpenAICompatibleMediaClient:
