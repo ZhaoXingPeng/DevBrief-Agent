@@ -34,7 +34,7 @@
 
 | 风险 | 当前边界 | 下一步 |
 | --- | --- | --- |
-| 重启后的审批执行 | SQLite 可恢复结果/回执/摘要；内存 Harness 不自动重建可执行会话 | 持久化 session/approval repository，并以 checkpoint 恢复执行上下文 |
+| provider 调用中的进程崩溃 | #50 已支持从 SQLite 重建 awaiting/terminal session、approval、receipt、trace 和 checkpoint | 为 live provider 增加请求级查询与跨进程锁，处理写入中断的未知结果 |
 | 真实 GitHub unknown outcome | live adapter 返回成功或错误；通用 query 需要 provider 侧幂等查询 | 使用 provider request id 或 issue search 建立安全查询协议，禁止盲重试 |
 | Web 鉴权 | 适合本机单用户；无生产身份认证 | 引入 OIDC/session、CSRF、审计主体和租户隔离 |
 | 任务系统 live draft | JSON endpoint adapter，默认 dry-run | 为具体系统建立 schema/version、超时、重试和回执契约 |

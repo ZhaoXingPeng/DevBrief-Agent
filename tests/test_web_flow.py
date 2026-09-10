@@ -8,7 +8,14 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from devbrief.domain.approval import compute_plan_hash
+from devbrief.domain.contracts import (
+    Approval,
+    ApprovalStatus,
+    SessionState,
+)
 from devbrief.integration.github import GitHubError
+from devbrief.integration.storage import SQLiteRunStore
 from devbrief.integration.web import create_server, github_client_from_environment
 
 
@@ -57,6 +64,195 @@ def test_web_json_run_approve_and_history(tmp_path: Path) -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_web_restarts_and_approves_persisted_session(tmp_path: Path) -> None:
+    database = tmp_path / "runs.sqlite3"
+    first = create_server(path=database, port=0)
+    first_thread = threading.Thread(target=first.serve_forever, daemon=True)
+    first_thread.start()
+    try:
+        base = f"http://127.0.0.1:{first.server_port}"
+        result = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/run",
+                    data=json.dumps(
+                        {"path": "fixtures/transcripts/bug-triage-redacted-v1.json"}
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+    finally:
+        first.shutdown()
+        first.server_close()
+
+    second = create_server(path=database, port=0)
+    second_thread = threading.Thread(target=second.serve_forever, daemon=True)
+    second_thread.start()
+    try:
+        base = f"http://127.0.0.1:{second.server_port}"
+        detail = json.loads(urlopen(f"{base}/api/runs/{result['session_id']}").read())
+        assert detail["state"] == "awaiting_approval"
+        approval = json.dumps(
+            {
+                "session_id": result["session_id"],
+                "approver_id": "restart-test",
+                "approved": True,
+                "plan_hash": result["plan_hash"],
+            }
+        ).encode()
+        completed = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/approve",
+                    data=approval,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+        assert completed["state"] == "completed"
+        assert completed["receipt"]["provider_request_id"] == "dry-run"
+    finally:
+        second.shutdown()
+        second.server_close()
+
+
+def test_web_restart_preserves_completed_receipt_without_replaying_write(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "runs.sqlite3"
+    first = create_server(path=database, port=0)
+    first_thread = threading.Thread(target=first.serve_forever, daemon=True)
+    first_thread.start()
+    try:
+        base = f"http://127.0.0.1:{first.server_port}"
+        result = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/run",
+                    data=json.dumps(
+                        {"path": "fixtures/transcripts/bug-triage-redacted-v1.json"}
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+        approval = json.dumps(
+            {
+                "session_id": result["session_id"],
+                "approver_id": "receipt-test",
+                "approved": True,
+                "plan_hash": result["plan_hash"],
+            }
+        ).encode()
+        completed = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/approve",
+                    data=approval,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+        assert completed["receipt"]["idempotency_key"]
+    finally:
+        first.shutdown()
+        first.server_close()
+
+    second = create_server(path=database, port=0)
+    second_thread = threading.Thread(target=second.serve_forever, daemon=True)
+    second_thread.start()
+    try:
+        base = f"http://127.0.0.1:{second.server_port}"
+        detail = json.loads(urlopen(f"{base}/api/runs/{result['session_id']}").read())
+        assert detail["state"] == "completed"
+        assert detail["receipt"]["provider_request_id"] == "dry-run"
+        request = Request(
+            f"{base}/api/approve",
+            data=approval,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError):
+            urlopen(request)
+    finally:
+        second.shutdown()
+        second.server_close()
+
+
+def test_web_restart_resumes_an_approved_executing_session(tmp_path: Path) -> None:
+    database = tmp_path / "runs.sqlite3"
+    first = create_server(path=database, port=0)
+    first_thread = threading.Thread(target=first.serve_forever, daemon=True)
+    first_thread.start()
+    try:
+        base = f"http://127.0.0.1:{first.server_port}"
+        result_payload = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/run",
+                    data=json.dumps(
+                        {"path": "fixtures/transcripts/bug-triage-redacted-v1.json"}
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+    finally:
+        first.shutdown()
+        first.server_close()
+
+    triage = SQLiteRunStore(database).get(result_payload["session_id"])
+    assert triage is not None
+    plan_hash = compute_plan_hash(triage.draft.plan)
+    approval = Approval(
+        approval_id=f"apr_{triage.session_id}",
+        plan_hash=plan_hash,
+        scope=["create_issue"],
+        approver_id="crash-recovery",
+        status=ApprovalStatus.APPROVED,
+        expires_at=triage.budget.deadline_at,
+        created_at=triage.budget.deadline_at,
+    )
+    executing = triage.model_copy(
+        update={
+            "state": SessionState.EXECUTING,
+            "approval_status": ApprovalStatus.APPROVED,
+            "approval_id": approval.approval_id,
+        }
+    )
+    SQLiteRunStore(database).save(executing, approval=approval)
+
+    second = create_server(path=database, port=0)
+    second_thread = threading.Thread(target=second.serve_forever, daemon=True)
+    second_thread.start()
+    try:
+        base = f"http://127.0.0.1:{second.server_port}"
+        request = Request(
+            f"{base}/api/approve",
+            data=json.dumps(
+                {
+                    "session_id": triage.session_id,
+                    "approved": True,
+                    "plan_hash": plan_hash,
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        resumed = json.loads(urlopen(request).read())
+        assert resumed["state"] == "completed"
+        assert resumed["receipt"]["provider_request_id"] == "dry-run"
+    finally:
+        second.shutdown()
+        second.server_close()
 
 
 def test_web_evidence_and_draft_endpoints(
