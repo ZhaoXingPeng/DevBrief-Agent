@@ -51,13 +51,20 @@ DEFAULT_BASE_URL = (
     "https://llm-3v3kgqdr8b0jtkjh.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 )
 STATIC_DIR = Path(__file__).with_name("static")
+AUDIO_UPLOAD_MIME_TYPES: dict[str, frozenset[str]] = {
+    ".wav": frozenset({"audio/wav", "audio/x-wav", "audio/wave"}),
+    ".mp3": frozenset({"audio/mpeg", "audio/mp3"}),
+    ".m4a": frozenset({"audio/mp4", "audio/m4a", "audio/x-m4a"}),
+    ".ogg": frozenset({"audio/ogg"}),
+    ".webm": frozenset({"audio/webm"}),
+}
 
 HTML = """<!doctype html><html lang=zh-CN><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>DevBrief Agent</title>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <style>body{font:15px system-ui;max-width:1040px;margin:28px auto;padding:0 18px;color:#172321;background:#fbfdfc}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #d9e2df;padding-bottom:12px}main{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}section{border:1px solid #d9e2df;padding:16px;border-radius:8px;background:#fff}section.wide{grid-column:1/-1}button{background:#16796f;color:#fff;border:0;padding:9px 14px;border-radius:5px;cursor:pointer;margin-right:6px}button.secondary{background:#51635f}button.danger{background:#a94442}input{padding:9px;border:1px solid #b9c8c4;border-radius:4px;margin:4px 6px 4px 0;max-width:100%}pre{background:#f3f7f5;padding:14px;overflow:auto;white-space:pre-wrap;max-height:520px}audio{width:100%}.muted{color:#61716d;font-size:13px}.row{display:flex;flex-wrap:wrap;align-items:center;gap:4px}@media(max-width:720px){main{grid-template-columns:1fr}section.wide{grid-column:auto}}</style></head>
 <body><div id=app><header><h1>DevBrief Agent</h1><span class=muted>{{ health }}</span></header><main>
-<section><h2>运行 Triage</h2><form @submit.prevent="run"><div class=row><input type=file ref=file accept=".json,audio/*"><input v-model="path" placeholder="fixture 路径"></div><button :disabled="busy">{{ busy?'运行中...':'运行' }}</button></form><p class=muted>支持脱敏 JSON fixture 或音频上传，上传内容仅在临时文件中处理。</p></section>
+<section><h2>运行 Triage</h2><form @submit.prevent="run"><div class=row><input type=file ref=file accept=".json,.wav,.mp3,.m4a,.ogg,.webm"><input v-model="path" placeholder="fixture 路径"></div><button :disabled="busy">{{ busy?'运行中...':'运行' }}</button></form><p class=muted>支持脱敏 JSON fixture 或 WAV、MP3、M4A、OGG、WebM 音频；上传内容仅在临时文件中处理。</p></section>
 <section><h2>审批与 Issue</h2><input v-model="sessionId" placeholder="session_id"><input v-model="approver" placeholder="审批人"><div><button @click="approve(true)" :disabled="!sessionId">批准并执行</button><button class="danger" @click="approve(false)" :disabled="!sessionId">拒绝</button></div></section>
 <section><h2>语音播报</h2><form @submit.prevent="speak"><input v-model="speech" style="width:70%"><button>生成语音</button></form><audio ref=player controls></audio></section>
 <section><h2>仓库证据</h2><form @submit.prevent="evidence"><input v-model="evidencePath" placeholder="README.md"><button>读取证据</button></form></section>
@@ -284,14 +291,17 @@ def create_server(
                     if suffix == ".json" or content_type == "application/json":
                         fixture_path = _temp_file(content, ".json")
                         temporary.append(fixture_path)
-                    elif content_type.startswith("audio/") or suffix in {
-                        ".wav",
-                        ".mp3",
-                        ".m4a",
-                        ".ogg",
-                        ".webm",
-                    }:
-                        audio_path = _temp_file(content, suffix or ".wav")
+                    elif (
+                        content_type.split(";", maxsplit=1)[0]
+                        .strip()
+                        .casefold()
+                        .startswith("audio/")
+                        or suffix in AUDIO_UPLOAD_MIME_TYPES
+                    ):
+                        audio_path = _temp_file(
+                            content,
+                            validate_audio_upload(name, content, content_type),
+                        )
                         temporary.append(audio_path)
                         fixture = _media_client().transcribe(audio_path)
                         fixture_path = _temp_file(
@@ -339,13 +349,12 @@ def create_server(
             try:
                 if "file" in files:
                     name, content, content_type = files["file"]
-                    if len(content) > MAX_UPLOAD_BYTES or not (
-                        content_type.startswith("audio/")
-                        or Path(name).suffix.lower()
-                        in {".wav", ".mp3", ".m4a", ".ogg", ".webm"}
-                    ):
-                        raise ValueError("invalid audio upload")
-                    source = _temp_file(content, Path(name).suffix or ".wav")
+                    if len(content) > MAX_UPLOAD_BYTES:
+                        raise ValueError("upload exceeds 10 MB limit")
+                    source = _temp_file(
+                        content,
+                        validate_audio_upload(name, content, content_type),
+                    )
                     temporary.append(source)
                 else:
                     source = _workspace_path(str(fields["path"]))
@@ -724,6 +733,38 @@ def _temp_file(content: bytes, suffix: str) -> Path:
     path = Path(name)
     path.write_bytes(content)
     return path
+
+
+def validate_audio_upload(name: str, content: bytes, content_type: str) -> str:
+    """Reject untrusted uploads before a temporary file or Provider call exists."""
+    suffix = Path(name).suffix.lower()
+    accepted_mime_types = AUDIO_UPLOAD_MIME_TYPES.get(suffix)
+    normalized_content_type = content_type.split(";", maxsplit=1)[0].strip().casefold()
+    if (
+        accepted_mime_types is None
+        or normalized_content_type not in accepted_mime_types
+        or not _matches_audio_signature(suffix, content)
+    ):
+        raise ValueError("invalid audio upload")
+    return suffix
+
+
+def _matches_audio_signature(suffix: str, content: bytes) -> bool:
+    if suffix == ".wav":
+        return (
+            len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WAVE"
+        )
+    if suffix == ".mp3":
+        return content.startswith(b"ID3") or (
+            len(content) >= 2 and content[0] == 0xFF and content[1] & 0xE0 == 0xE0
+        )
+    if suffix == ".m4a":
+        return len(content) >= 12 and content[4:8] == b"ftyp"
+    if suffix == ".ogg":
+        return content.startswith(b"OggS")
+    if suffix == ".webm":
+        return content.startswith(b"\x1aE\xdf\xa3") and b"webm" in content[:128].lower()
+    return False
 
 
 def _multipart(
