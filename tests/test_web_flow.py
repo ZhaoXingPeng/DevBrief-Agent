@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 from pathlib import Path
 from urllib.error import HTTPError
@@ -20,6 +21,26 @@ from devbrief.integration import web as web_module
 from devbrief.integration.github import GitHubError, GitHubIssue
 from devbrief.integration.storage import SQLiteRunStore
 from devbrief.integration.web import create_server, github_client_from_environment
+
+
+def test_web_serves_packaged_structured_audit_console(tmp_path: Path) -> None:
+    server = create_server(path=tmp_path / "runs.sqlite3", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        page = urlopen(base).read().decode("utf-8")
+        match = re.search(r'src="(?P<asset>/assets/[^\"]+\.js)"', page)
+
+        assert match is not None
+        script = urlopen(f"{base}{match.group('asset')}").read().decode("utf-8")
+        assert "候选与证据" in script
+        assert "执行计划" in script
+        assert "审批与回执" in script
+        assert "运行历史" in script
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_web_json_run_approve_and_history(tmp_path: Path) -> None:
