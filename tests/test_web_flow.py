@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -16,11 +17,152 @@ from devbrief.domain.contracts import (
     SessionState,
     ToolReceipt,
     ToolReceiptStatus,
+    TranscriptFixture,
+    TranscriptSegment,
 )
 from devbrief.integration import web as web_module
 from devbrief.integration.github import GitHubError, GitHubIssue
 from devbrief.integration.storage import SQLiteRunStore
 from devbrief.integration.web import create_server, github_client_from_environment
+
+
+def _multipart_request(
+    base: str,
+    endpoint: str,
+    *,
+    filename: str,
+    content_type: str,
+    content: bytes,
+) -> Request:
+    boundary = "devbrief-upload-test"
+    body = (
+        (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="file"; '
+            f'filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode()
+        + content
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    return Request(
+        f"{base}{endpoint}",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "content_type", "content"),
+    [
+        ("audio.wav", "audio/wav", b"RIFF\x00\x00\x00\x00WAVE"),
+        ("audio.mp3", "audio/mpeg", b"ID3\x04\x00\x00"),
+        ("audio.m4a", "audio/mp4", b"\x00\x00\x00\x14ftypM4A "),
+        ("audio.ogg", "audio/ogg", b"OggS\x00\x02"),
+        ("audio.webm", "audio/webm", b"\x1aE\xdf\xa3webm"),
+    ],
+)
+def test_audio_upload_validation_accepts_known_format_signatures(
+    name: str, content_type: str, content: bytes
+) -> None:
+    assert (
+        web_module.validate_audio_upload(name, content, content_type)
+        == Path(name).suffix
+    )
+
+
+@pytest.mark.parametrize("endpoint", ["/api/run", "/api/transcribe"])
+@pytest.mark.parametrize(
+    ("filename", "content_type", "content"),
+    [
+        ("not-audio.wav", "audio/wav", b"not a WAV file"),
+        ("wrong-extension.txt", "audio/wav", b"RIFF\x00\x00\x00\x00WAVE"),
+    ],
+)
+def test_web_rejects_unverified_audio_before_provider_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+    filename: str,
+    content_type: str,
+    content: bytes,
+) -> None:
+    def unexpected_media_client() -> object:
+        raise AssertionError("unverified audio must not reach the media provider")
+
+    monkeypatch.setattr(web_module, "_media_client", unexpected_media_client)
+    server = create_server(path=tmp_path / "runs.sqlite3", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        with pytest.raises(HTTPError) as error:
+            urlopen(
+                _multipart_request(
+                    base,
+                    endpoint,
+                    filename=filename,
+                    content_type=content_type,
+                    content=content,
+                )
+            )
+        assert error.value.code == 400
+        assert b"invalid audio upload" in error.value.read()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_web_transcribes_verified_audio_and_removes_temporary_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    uploaded_paths: list[Path] = []
+
+    class MediaClient:
+        def transcribe(self, path: Path) -> TranscriptFixture:
+            uploaded_paths.append(path)
+            return TranscriptFixture(
+                fixture_id="verified-audio",
+                fixture_version="1.0.0",
+                redacted=True,
+                segments=[
+                    TranscriptSegment(
+                        segment_id="seg-1",
+                        start_ms=0,
+                        end_ms=1000,
+                        speaker="unknown",
+                        text="redacted decision",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(web_module, "_media_client", MediaClient)
+    server = create_server(path=tmp_path / "runs.sqlite3", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        response = json.loads(
+            urlopen(
+                _multipart_request(
+                    base,
+                    "/api/transcribe",
+                    filename="verified.wav",
+                    content_type="audio/wav",
+                    content=b"RIFF\x00\x00\x00\x00WAVE",
+                )
+            ).read()
+        )
+        assert response["fixture_id"] == "verified-audio"
+        assert uploaded_paths
+        deadline = time.monotonic() + 1.0
+        while uploaded_paths[0].exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not uploaded_paths[0].exists()
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_web_serves_packaged_structured_audit_console(tmp_path: Path) -> None:
