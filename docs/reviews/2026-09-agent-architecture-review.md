@@ -6,7 +6,7 @@
 
 ## 结论
 
-项目已经从“模型调用 Demo”进入可审计的单 Agent Runtime：输入、候选、证据、计划、策略、审批、外部写入、回执、checkpoint、trace 和 replay 都有类型化边界，并有 91 项离线测试。它最适合应聘 Agent Harness、Agent 后端、AI Testing/研发效能方向，不应表述为已完成生产级多租户平台或 Agentic RL 基础设施。
+项目已经从“模型调用 Demo”进入可审计的单 Agent Runtime：输入、候选、证据、计划、策略、审批、外部写入、回执、checkpoint、trace 和 replay 都有类型化边界，并有 102 项离线测试。它最适合应聘 Agent Harness、Agent 后端、AI Testing/研发效能方向，不应表述为已完成生产级多租户平台或 Agentic RL 基础设施。
 
 ## 面试官会认可的证据
 
@@ -35,7 +35,7 @@
 | 风险 | 当前边界 | 下一步 |
 | --- | --- | --- |
 | provider 调用中的进程崩溃 | #50 已支持从 SQLite 重建 awaiting/terminal session、approval、receipt、trace 和 checkpoint | 为 live provider 增加请求级查询与跨进程锁，处理写入中断的未知结果 |
-| 真实 GitHub unknown outcome | live adapter 返回成功或错误；通用 query 需要 provider 侧幂等查询 | 使用 provider request id 或 issue search 建立安全查询协议，禁止盲重试 |
+| 真实 GitHub unknown outcome | #51 已通过不可逆 marker 和 Search API 实现 query-first；网络超时保存 unknown receipt | 增加跨进程锁、请求级 provider id 和更严格的回执对账 |
 | Web 鉴权 | 适合本机单用户；无生产身份认证 | 引入 OIDC/session、CSRF、审计主体和租户隔离 |
 | 任务系统 live draft | JSON endpoint adapter，默认 dry-run | 为具体系统建立 schema/version、超时、重试和回执契约 |
 | Agent 效果 | 当前 deterministic fake analyzer/planner，用于 Harness 基线 | 接入真实模型前先固定评测集、指标、成本和回归阈值 |

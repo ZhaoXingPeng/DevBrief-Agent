@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from devbrief.domain.contracts import (
     ApprovalStatus,
@@ -10,9 +13,17 @@ from devbrief.domain.contracts import (
     Plan,
     SessionState,
     TaskDraft,
+    ToolReceiptStatus,
+    ToolRequest,
     TriageRunResult,
 )
-from devbrief.integration.github import GitHubError, GitHubIssueClient
+from devbrief.integration import github as github_module
+from devbrief.integration.github import (
+    GitHubError,
+    GitHubIssueClient,
+    GitHubIssueProvider,
+    idempotency_marker,
+)
 from devbrief.integration.media import segments_from_response
 from devbrief.integration.storage import SQLiteRunStore
 
@@ -86,6 +97,152 @@ def test_github_client_enforces_configured_repository_scope() -> None:
         assert "scope" in str(exc)
     else:
         raise AssertionError("repository scope must be enforced")
+
+
+class _Response:
+    def __init__(self, payload: object) -> None:
+        self.payload = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self) -> _Response:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.payload
+
+
+def _github_request() -> ToolRequest:
+    return ToolRequest(
+        tool_call_id="call_github",
+        tool_name="create_issue",
+        arguments={
+            "repository": "owner/repo",
+            "title": "Task",
+            "body": "Details",
+        },
+        session_id="ses_github",
+        trace_id="trc_github",
+        idempotency_key="idem_github_1",
+    )
+
+
+def test_github_provider_binds_marker_to_create_and_queries_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[object] = []
+
+    def fake_urlopen(request: object, *, timeout: float) -> _Response:
+        del timeout
+        requests.append(request)
+        if getattr(request, "method", None) == "GET":
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "number": 42,
+                            "html_url": "https://github.com/owner/repo/issues/42",
+                            "title": "Task",
+                            "body": f"Details\n\n{idempotency_marker('idem_github_1')}",
+                        }
+                    ]
+                }
+            )
+        return _Response(
+            {
+                "number": 42,
+                "html_url": "https://github.com/owner/repo/issues/42",
+                "title": "Task",
+            }
+        )
+
+    monkeypatch.setattr(github_module, "urlopen", fake_urlopen)
+    client = GitHubIssueClient(
+        token="test-token",
+        dry_run=False,
+        allowed_repositories={"owner/repo"},
+    )
+    provider = GitHubIssueProvider(client)
+    request = _github_request()
+
+    created = provider.create(request)
+    assert created.status is ToolReceiptStatus.SUCCEEDED
+    assert created.external_object_id == "42"
+    assert (
+        idempotency_marker("idem_github_1")
+        in json.loads(
+            requests[0].data.decode("utf-8")  # type: ignore[union-attr]
+        )["body"]
+    )
+
+    recovered = provider.query(request)
+    assert recovered is not None
+    assert recovered.external_object_id == "42"
+    assert getattr(requests[1], "method", None) == "GET"
+    assert "search/issues?" in requests[1].full_url  # type: ignore[union-attr]
+
+
+def test_github_query_rejects_multiple_marker_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(request: object, *, timeout: float) -> _Response:
+        del request, timeout
+        return _Response(
+            {
+                "items": [
+                    {
+                        "number": 1,
+                        "html_url": "https://github.com/owner/repo/issues/1",
+                        "body": idempotency_marker("idem_github_1"),
+                    },
+                    {
+                        "number": 2,
+                        "html_url": "https://github.com/owner/repo/issues/2",
+                        "body": idempotency_marker("idem_github_1"),
+                    },
+                ]
+            }
+        )
+
+    monkeypatch.setattr(
+        github_module,
+        "urlopen",
+        fake_urlopen,
+    )
+    client = GitHubIssueClient(
+        token="test-token",
+        dry_run=False,
+        allowed_repositories={"owner/repo"},
+    )
+
+    with pytest.raises(GitHubError, match="multiple"):
+        client.find_issue_by_idempotency(
+            repository="owner/repo", idempotency_key="idem_github_1"
+        )
+
+
+def test_github_provider_turns_transport_timeout_into_unknown_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def timeout_urlopen(request: object, *, timeout: float) -> _Response:
+        del request, timeout
+        raise TimeoutError("simulated timeout")
+
+    monkeypatch.setattr(github_module, "urlopen", timeout_urlopen)
+    provider = GitHubIssueProvider(
+        GitHubIssueClient(
+            token="test-token",
+            dry_run=False,
+            allowed_repositories={"owner/repo"},
+        )
+    )
+
+    receipt = provider.create(_github_request())
+
+    assert receipt.status is ToolReceiptStatus.UNKNOWN_OUTCOME
+    assert receipt.external_object_id is None
+    assert receipt.idempotency_key == "idem_github_1"
 
 
 def test_asr_response_becomes_ordered_redacted_segments() -> None:
