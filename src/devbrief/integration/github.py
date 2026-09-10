@@ -34,11 +34,17 @@ class GitHubIssueClient:
         api_url: str = "https://api.github.com",
         dry_run: bool = True,
         timeout: float = 15.0,
+        allowed_repositories: set[str] | frozenset[str] | None = None,
     ) -> None:
         self.token = token or os.getenv("DEVBRIEF_GITHUB_TOKEN")
         self.api_url = api_url.rstrip("/")
         self.dry_run = dry_run
         self.timeout = timeout
+        self.allowed_repositories = (
+            frozenset(allowed_repositories)
+            if allowed_repositories is not None
+            else None
+        )
 
     def create_issue(
         self,
@@ -51,6 +57,14 @@ class GitHubIssueClient:
     ) -> GitHubIssue:
         if not repository or "/" not in repository:
             raise GitHubError("repository must use owner/name format")
+        owner, name = repository.split("/", maxsplit=1)
+        if not owner or not name or "/" in name:
+            raise GitHubError("repository must use owner/name format")
+        if (
+            self.allowed_repositories is not None
+            and repository not in self.allowed_repositories
+        ):
+            raise GitHubError("repository is outside the configured write scope")
         if not title.strip() or not body.strip():
             raise GitHubError("title and body are required")
         if self.dry_run:

@@ -78,6 +78,16 @@ def test_github_client_requires_token_for_live_write() -> None:
         raise AssertionError("live GitHub write must require a token")
 
 
+def test_github_client_enforces_configured_repository_scope() -> None:
+    client = GitHubIssueClient(allowed_repositories={"owner/allowed"})
+    try:
+        client.create_issue(repository="owner/other", title="A", body="B")
+    except GitHubError as exc:
+        assert "scope" in str(exc)
+    else:
+        raise AssertionError("repository scope must be enforced")
+
+
 def test_asr_response_becomes_ordered_redacted_segments() -> None:
     segments = segments_from_response(
         {
