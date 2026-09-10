@@ -68,7 +68,7 @@ Server rendered element contains fewer child nodes than client vdom.`),rn())),n(
       <section class="panel run-panel">
         <div class="panel-heading"><h2>输入</h2><span v-if="busy" class="loading">处理中</span></div>
         <form class="input-form" @submit.prevent="run">
-          <label class="file-input"><span>上传 fixture 或音频</span><input ref="fileInput" type="file" accept=".json,audio/*"></label>
+          <label class="file-input"><span>上传 fixture 或音频</span><input ref="fileInput" type="file" accept=".json,.wav,.mp3,.m4a,.ogg,.webm"></label>
           <label class="path-input"><span>工作区 fixture</span><input v-model="path" aria-label="fixture path"></label>
           <button type="submit" :disabled="busy">运行 Triage</button>
         </form>
