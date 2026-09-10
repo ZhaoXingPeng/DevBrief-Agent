@@ -14,3 +14,4 @@ logs/
 traces/
 checkpoints/
 .ipynb_checkpoints/
+web/node_modules/

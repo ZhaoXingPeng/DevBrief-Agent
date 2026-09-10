@@ -1,0 +1,15 @@
+{
+  "name": "devbrief-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7"
+  }
+}
