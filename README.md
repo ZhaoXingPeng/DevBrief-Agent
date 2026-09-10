@@ -24,12 +24,12 @@ Triage fixture，经过分析、证据上下文、任务计划、策略和人工
 
 ## 当前状态
 
-Phase 1 本地 Harness 已完成并进入 `main`：82 条 Python 3.13 测试通过，包含从输入
-fixture 到审批前编排，以及受控 Fake Issue external-write 闭环。实现不需要凭据，默认
-不会访问网络，也不会执行 shell、修改代码或合并 PR。
+Phase 1 本地 Harness 已完成并进入 `main`：当前包含 SQLite 运行记录、GitHub Issues
+适配器、CLI 和本地 Web Demo。测试使用固定 fixture 与 fake provider，不需要凭据；GitHub
+和百炼网络调用都必须显式配置，GitHub 写入默认 dry-run。
 
-真实 GitHub/API、真实 LLM、ASR、数据库、Web UI、CI 部署和生产外部写入仍是后续
-独立的 Design/Coding Issue，不应将当前 fake provider 当作真实集成。
+真实 GitHub Issue 写入、百炼 ASR/TTS 和本地 Web Demo 已提供最小集成入口；生产鉴权、
+实时流式 ASR、队列、多租户和部署仍需独立的 Design/Coding Issue。
 
 ## 能力闭环
 
@@ -76,13 +76,25 @@ fixture 到审批前编排，以及受控 Fake Issue external-write 闭环。实
 
 ```bash
 python -m pip install -e ".[dev]"
+devbrief run fixtures/transcripts/bug-triage-redacted-v1.json
+devbrief serve --port 8000
 pytest
 ruff format --check .
 ruff check .
 pyright
 ```
 
-测试只使用固定 fixture 和 fake provider，不需要 API key。若尚未安装 editable package，
+测试只使用固定 fixture 和 fake provider，不需要 API key。ASR/TTS 使用百炼兼容端点：
+
+```bash
+set DEVBRIEF_BAILIAN_API_KEY=<your-key>
+set DEVBRIEF_BAILIAN_BASE_URL=https://llm-3v3kgqdr8b0jtkjh.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+devbrief transcribe meeting.wav --output transcript.json
+devbrief speak "准备提交任务" --output briefing.wav
+```
+
+真实 GitHub 写入需要显式关闭 dry-run 并设置 `DEVBRIEF_GITHUB_TOKEN`；代码中不保存密钥。
+若尚未安装 editable package，
 可用 `PYTHONPATH=src pytest` 运行测试。
 
 ## 文档
@@ -100,10 +112,10 @@ pyright
 ## 路线图
 
 - [x] Phase 1：无凭据 Harness、fixture、分析、计划、策略、审批、回执、回放和 fake external-write。
-- [ ] Phase 2：真实仓库证据适配器和可配置的任务系统 draft API。
-- [ ] Phase 3：在独立威胁模型和审批设计后接入真实 provider。
-- [ ] Phase 4：评测报告、CI、Demo 和可观测性收尾。
-- [ ] Phase 5：音频/ASR 与实时体验实验。
+- [x] Phase 2 起步：SQLite、GitHub Issues adapter、百炼 ASR/TTS adapter 和本地 Web Demo。
+- [ ] Phase 2 完整化：仓库证据适配器、审批 UI 和可配置的任务系统 draft API。
+- [ ] Phase 3：真实 provider 的生产级鉴权、审计、限流和失败恢复。
+- [ ] Phase 4：评测报告、CI 部署、可观测性和实时音频体验。
 
 ## 参与开发
 
