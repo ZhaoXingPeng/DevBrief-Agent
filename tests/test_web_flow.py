@@ -5,6 +5,8 @@ import threading
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import pytest
+
 from devbrief.integration.web import create_server
 
 
@@ -50,6 +52,56 @@ def test_web_json_run_approve_and_history(tmp_path: Path) -> None:
         assert completed["receipt"]["provider_request_id"] == "dry-run"
         history = json.loads(urlopen(f"{base}/api/runs").read())
         assert history["runs"][0]["session_id"] == result["session_id"]
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_web_evidence_and_draft_endpoints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.txt").write_text(
+        "token=private-value\nDecision", encoding="utf-8"
+    )
+    server = create_server(path=tmp_path / "runs.sqlite3", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{server.server_port}"
+        headers = {"Content-Type": "application/json"}
+        evidence = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/evidence",
+                    data=json.dumps({"path": "notes.txt"}).encode(),
+                    headers=headers,
+                    method="POST",
+                )
+            ).read()
+        )
+        assert evidence["reference"] == "repo://notes.txt"
+        assert "private-value" not in evidence["summary"]
+        draft = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/draft",
+                    data=json.dumps(
+                        {
+                            "plan": {
+                                "title": "Task",
+                                "body": "Details",
+                                "repository": "owner/repository",
+                                "tool_name": "create_issue",
+                            }
+                        }
+                    ).encode(),
+                    headers=headers,
+                    method="POST",
+                )
+            ).read()
+        )
+        assert draft["dry_run"] is True
     finally:
         server.shutdown()
         server.server_close()

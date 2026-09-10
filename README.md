@@ -79,6 +79,8 @@ python -m pip install -e ".[dev]"
 devbrief run fixtures/transcripts/bug-triage-redacted-v1.json
 devbrief serve --port 8000
 devbrief approve <session_id> --url http://127.0.0.1:8000
+devbrief evidence README.md
+devbrief draft plan.json
 pytest
 ruff format --check .
 ruff check .
@@ -119,6 +121,13 @@ devbrief speak "准备提交任务" --output briefing.wav
 - [x] Phase 4：评测基础、GitHub Actions CI、可观测 trace/checkpoint 摘要。
 - [x] Phase 5：音频上传、ASR 脱敏 fixture、TTS 播放和实时体验实验入口。
 - [ ] 后续：生产鉴权、限流、多租户、实时流式 ASR 和更完整的仓库证据索引。
+
+Web API 还提供 `POST /api/evidence`（工作区内有界文本证据）和 `POST /api/draft`
+（可配置任务系统 draft，默认 dry-run）。仓库证据只返回摘要、哈希和 `repo://` 引用，
+不会把完整文件内容写入 trace 或数据库。
+
+Web 前端位于 `web/`，使用 Vue 3 + Vite 构建；`devbrief serve` 优先提供提交到包内的
+本地构建资源，未构建时回退到内置页面。前端不保存凭据，所有写操作仍由后端审批门禁控制。
 
 ## 参与开发
 
