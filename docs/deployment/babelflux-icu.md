@@ -17,7 +17,10 @@
 2. 在发布目录创建 Python 3.11 虚拟环境并安装 `pip install .`，再原子更新 `/opt/devbrief/current`。
 3. 环境文件至少设置 `DEVBRIEF_BAILIAN_API_KEY` 和 `DEVBRIEF_BAILIAN_BASE_URL`；可选 GitHub 变量按 README 配置。
 4. 安装 `deployment/systemd/devbrief.service`，启用并启动服务。
-5. 将 `deployment/nginx/devbrief.location.conf` 包含到 `babelflux.icu` 的 TLS server 块，运行 `nginx -t && systemctl reload nginx`。
+5. 将 `deployment/nginx/devbrief.location.conf` 包含到两个 HTTPS server 块。`www` server
+   必须把原来的 server 级 `return 301` 改为 `location / { return 301 https://babelflux.icu$request_uri; }`，
+   让更具体的 `/devbrief/` location 优先；根域 server 保持现有行为。运行
+   `nginx -t && systemctl reload nginx`。
 
 ## 验证与回滚
 

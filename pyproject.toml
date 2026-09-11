@@ -28,6 +28,9 @@ devbrief = [
   "integration/static/**/*.html",
   "integration/static/**/*.css",
   "integration/static/**/*.js",
+  "integration/static/**/*.png",
+  "integration/static/**/*.ico",
+  "integration/static/**/*.svg",
 ]
 
 [tool.ruff]
