@@ -228,10 +228,7 @@ def create_server(
                 self._run_detail(route.rsplit("/", 1)[-1])
             elif route == "/" and (STATIC_DIR / "index.html").is_file():
                 self._send_static("index.html")
-            elif (
-                route.startswith("/assets/")
-                and (STATIC_DIR / route.lstrip("/")).is_file()
-            ):
+            elif route != "/" and (STATIC_DIR / route.lstrip("/")).is_file():
                 self._send_static(route.lstrip("/"))
             else:
                 self.send_response(200)
