@@ -1,0 +1,22 @@
+[Unit]
+Description=DevBrief Agent web demo
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=devbrief
+Group=devbrief
+WorkingDirectory=/opt/devbrief/current
+EnvironmentFile=/etc/devbrief/devbrief.env
+ExecStart=/opt/devbrief/current/.venv/bin/devbrief serve --host 127.0.0.1 --port 8765 --db /var/lib/devbrief/runs.sqlite3
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/devbrief
+
+[Install]
+WantedBy=multi-user.target
