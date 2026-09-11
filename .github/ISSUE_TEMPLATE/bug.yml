@@ -1,0 +1,32 @@
+name: Bug
+description: 记录一个可复现、可回归的缺陷
+title: "🐛 fix(scope): "
+labels: [bug]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题
+      description: 说明用户影响，不贴秘密或完整私有响应。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 最小复现与期望/实际
+      value: "## 最小复现\n\n## 期望\n\n## 实际"
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Given / When / Then 验收
+      value: "Given ...\nWhen ...\nThen ..."
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: 根因、回归范围与脱敏
+    validations:
+      required: true
