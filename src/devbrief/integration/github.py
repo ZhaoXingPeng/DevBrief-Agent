@@ -70,6 +70,20 @@ class GitHubIssueClient:
         if not self.token:
             raise GitHubError("DEVBRIEF_GITHUB_TOKEN is required when dry-run is off")
 
+        if idempotency_key:
+            try:
+                existing = self.find_issue_by_idempotency(
+                    repository=repository, idempotency_key=idempotency_key
+                )
+            except GitHubError as exc:
+                if str(exc) == "GitHub Issue query failed":
+                    raise GitHubUnknownOutcomeError(
+                        "GitHub idempotency query outcome is unknown"
+                    ) from exc
+                raise
+            if existing is not None:
+                return existing
+
         payload_body = body
         if idempotency_key:
             marker = idempotency_marker(idempotency_key)
@@ -114,30 +128,38 @@ class GitHubIssueClient:
             raise GitHubError("DEVBRIEF_GITHUB_TOKEN is required when dry-run is off")
 
         marker = idempotency_marker(idempotency_key)
-        query = urlencode({"q": f'repo:{repository} "{marker}"', "per_page": "10"})
-        request = Request(
-            f"{self.api_url}/search/issues?{query}",
-            headers=_headers(self.token),
-            method="GET",
-        )
-        try:
-            with urlopen(request, timeout=self.timeout) as response:
-                decoded: Any = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError) as exc:
-            raise GitHubError("GitHub Issue query failed") from exc
-        if not isinstance(decoded, dict):
-            raise GitHubError("GitHub returned an invalid search response")
-        result = cast(dict[str, Any], decoded)
-        items = result.get("items")
-        if not isinstance(items, list):
-            raise GitHubError("GitHub search response omitted items")
+        digest = marker.rsplit(":", maxsplit=1)[-1].removesuffix(" -->")
+        # GitHub Search may not index HTML comment delimiters. Try the exact
+        # marker first, then search the digest and retain only exact body matches.
         matches: list[dict[str, Any]] = []
-        for item in cast(list[object], items):
-            if not isinstance(item, dict):
-                continue
-            candidate = cast(dict[str, Any], item)
-            if marker in str(candidate.get("body", "")):
-                matches.append(candidate)
+        for search_term in (f'"{marker}"', digest):
+            query = urlencode(
+                {"q": f"repo:{repository} {search_term}", "per_page": "10"}
+            )
+            request = Request(
+                f"{self.api_url}/search/issues?{query}",
+                headers=_headers(self.token),
+                method="GET",
+            )
+            try:
+                with urlopen(request, timeout=self.timeout) as response:
+                    decoded: Any = json.loads(response.read().decode("utf-8"))
+            except (HTTPError, URLError, TimeoutError) as exc:
+                raise GitHubError("GitHub Issue query failed") from exc
+            if not isinstance(decoded, dict):
+                raise GitHubError("GitHub returned an invalid search response")
+            result = cast(dict[str, Any], decoded)
+            items = result.get("items")
+            if not isinstance(items, list):
+                raise GitHubError("GitHub search response omitted items")
+            for item in cast(list[object], items):
+                if not isinstance(item, dict):
+                    continue
+                candidate = cast(dict[str, Any], item)
+                if marker in str(candidate.get("body", "")):
+                    matches.append(candidate)
+            if matches:
+                break
         if len(matches) > 1:
             raise GitHubError("GitHub returned multiple idempotency matches")
         if not matches:
