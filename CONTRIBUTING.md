@@ -2,6 +2,8 @@
 
 DevBrief 采用“先明确需求和契约，再小步实现，再用证据审阅”的协作方式。规范目标不是制造流程负担，而是保证语音、Agent、检索和外部写操作在演进时仍可解释、可测试、可回退。
 
+提交 Issue、PR 和实验评论前，请先按 [GitHub Issue / PR 证据 SOP](docs/standards/github-workflow-sop.md) 选择对象类型和模板；该 SOP 是本文件中标题、验收、RED/GREEN、实验记录与回退要求的可复用入口。
+
 完整工程约束见 [`docs/standards/`](docs/standards/README.md)。在仓库工作的编码 Agent 还必须遵守 [`AGENTS.md`](AGENTS.md)。
 
 ## 1. 工作对象与真相来源
