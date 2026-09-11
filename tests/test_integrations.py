@@ -137,6 +137,8 @@ def test_github_provider_binds_marker_to_create_and_queries_it(
         del timeout
         requests.append(request)
         if getattr(request, "method", None) == "GET":
+            if sum(getattr(item, "method", None) == "GET" for item in requests) < 3:
+                return _Response({"items": []})
             return _Response(
                 {
                     "items": [
@@ -169,18 +171,60 @@ def test_github_provider_binds_marker_to_create_and_queries_it(
     created = provider.create(request)
     assert created.status is ToolReceiptStatus.SUCCEEDED
     assert created.external_object_id == "42"
+    post = next(item for item in requests if getattr(item, "method", None) == "POST")
+    post_data = getattr(post, "data", None)
+    assert isinstance(post_data, bytes)
     assert (
         idempotency_marker("idem_github_1")
-        in json.loads(
-            requests[0].data.decode("utf-8")  # type: ignore[union-attr]
-        )["body"]
+        in json.loads(post_data.decode("utf-8"))["body"]
     )
 
     recovered = provider.query(request)
     assert recovered is not None
     assert recovered.external_object_id == "42"
-    assert getattr(requests[1], "method", None) == "GET"
-    assert "search/issues?" in requests[1].full_url  # type: ignore[union-attr]
+    assert getattr(requests[-1], "method", None) == "GET"
+    assert "search/issues?" in requests[-1].full_url  # type: ignore[union-attr]
+
+
+def test_github_create_reuses_existing_issue_before_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[object] = []
+
+    def fake_urlopen(request: object, *, timeout: float) -> _Response:
+        del timeout
+        requests.append(request)
+        if getattr(request, "method", None) == "GET":
+            return _Response(
+                {
+                    "items": [
+                        {
+                            "number": 7,
+                            "html_url": "https://github.com/owner/repo/issues/7",
+                            "body": idempotency_marker("idem_github_1"),
+                        }
+                    ]
+                }
+            )
+        raise AssertionError("existing idempotency marker must prevent POST")
+
+    monkeypatch.setattr(github_module, "urlopen", fake_urlopen)
+    client = GitHubIssueClient(
+        token="test-token",
+        dry_run=False,
+        allowed_repositories={"owner/repo"},
+    )
+
+    issue = client.create_issue(
+        repository="owner/repo",
+        title="Task",
+        body="Details",
+        idempotency_key="idem_github_1",
+    )
+
+    assert issue.number == 7
+    assert issue.dry_run is False
+    assert all(getattr(item, "method", None) == "GET" for item in requests)
 
 
 def test_github_query_rejects_multiple_marker_matches(
@@ -220,6 +264,46 @@ def test_github_query_rejects_multiple_marker_matches(
         client.find_issue_by_idempotency(
             repository="owner/repo", idempotency_key="idem_github_1"
         )
+
+
+def test_github_query_falls_back_to_digest_search_when_comment_is_not_indexed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[object] = []
+
+    def fake_urlopen(request: object, *, timeout: float) -> _Response:
+        del timeout
+        requests.append(request)
+        if len(requests) == 1:
+            return _Response({"items": []})
+        return _Response(
+            {
+                "items": [
+                    {
+                        "number": 42,
+                        "html_url": "https://github.com/owner/repo/issues/42",
+                        "body": idempotency_marker("idem_github_1"),
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr(github_module, "urlopen", fake_urlopen)
+    client = GitHubIssueClient(
+        token="test-token",
+        dry_run=False,
+        allowed_repositories={"owner/repo"},
+    )
+
+    issue = client.find_issue_by_idempotency(
+        repository="owner/repo", idempotency_key="idem_github_1"
+    )
+
+    assert issue is not None
+    assert issue.number == 42
+    assert len(requests) == 2
+    assert "search/issues?" in requests[1].full_url  # type: ignore[union-attr]
+    assert "devbrief-idempotency%3A" not in requests[1].full_url  # type: ignore[union-attr]
 
 
 def test_github_provider_turns_transport_timeout_into_unknown_receipt(
