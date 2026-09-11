@@ -1,0 +1,30 @@
+name: Feature
+description: 记录一个可独立交付的功能切片
+title: "✨ feat(scope): "
+labels: [feature]
+body:
+  - type: textarea
+    id: user_problem
+    attributes:
+      label: 用户问题与成功标准
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围与非范围
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Given / When / Then 验收
+      value: "Given ...\nWhen ...\nThen ..."
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 测试边界、外部依赖、安全与回退
+    validations:
+      required: true
