@@ -1,0 +1,29 @@
+name: Design
+description: 记录架构、交互或安全设计决定
+title: "♻️ refactor(scope): "
+labels: [design]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景、边界与非目标
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: 候选方案与选择依据
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: 契约、数据、安全、迁移与回退影响
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收与验证计划
+    validations:
+      required: true
