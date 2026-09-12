@@ -66,7 +66,7 @@
 | EXT-01 | dry-run 外部写 | 批准后生成 dry-run receipt，不发真实 GitHub 请求 | `tests/test_external_write.py`、`test_web_flow.py` | E2 | 通过 | sandbox 仓库未配置 |
 | EXT-02 | 幂等/重放 | 相同 key+参数返回原 receipt，provider 写入次数不增加 | `tests/test_receipts.py`、`test_external_write.py` | E1/E2 | 通过 | 并发竞态待压测 |
 | EXT-03 | unknown outcome | 超时后只能 query-first；查询不到保持 unknown，不盲重试 | `tests/test_receipts.py`、`test_web_flow.py` | E1/E2 | 通过 | 真实 GitHub 超时演练待做 |
-| EXT-04 | GitHub sandbox | 最小权限 token 在测试仓库创建一次 Issue 并可按 key 查询 | 需 `DEVBRIEF_GITHUB_*` | E3 | 未执行 | 需专用仓库和短期 token，不能用个人生产仓库 |
+| EXT-04 | GitHub sandbox | 最小权限 token 在测试仓库创建一次 Issue 并可按 key 查询 | Issue #57 D3 真实联调记录 | E3 | 通过 | 单仓库/单样本/单网络窗口；不外推生产可靠性 |
 | TRACE-01 | 脱敏/隐私 | trace/checkpoint 不含 token、原始音频、完整私有正文 | `tests/test_trace.py`、`test_receipts.py` | E1 | 通过 | 需 secret scanner 纳入 CI |
 | TRACE-02 | 轨迹回放 | fake replay 比较状态、plan_hash、工具决策和 receipt 引用 | `tests/test_replay.py`、`test_trace_replay.py` | E1 | 通过 | 无跨版本 replay 兼容矩阵 |
 | REC-01 | SQLite 重启 | awaiting_approval、executing、completed 重启后状态/receipt 正确恢复 | `tests/test_web_flow.py` | E2 | 通过 | 多进程 SQLite 压测待做 |

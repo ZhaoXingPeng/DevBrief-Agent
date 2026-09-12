@@ -36,6 +36,6 @@ devbrief run <临时目录>/transcript.json
 
 ## 4. 结论与限制
 
-当前 main 满足单 Agent Harness / AI Testing MVP 的契约、工具、审批、恢复、回放、离线 Eval、Web/API 和一次真实媒体入链证据。不能外推真实 LLM 质量、ASR WER、p95 时延/成本、并发稳定性或生产级能力。
+当前 main 满足单 Agent Harness / AI Testing MVP 的契约、工具、审批、恢复、回放、离线 Eval、Web/API、GitHub sandbox（Issue #57）和一次真实媒体入链证据。不能外推真实 LLM 质量、ASR WER、p95 时延/成本、并发稳定性或生产级能力。
 
-仍未执行：GitHub sandbox 外部写、真实 LLM 标注集、性能 runner、生产鉴权/OTel/多租户、实时流式 ASR、多 Agent 对照实验。`build/` 未跟踪目录会遮蔽本地 `build` 模块，打包验证使用隔离 cwd 绕过，未删除该用户文件。
+仍未执行：真实 LLM 标注集、性能 runner、生产鉴权/OTel/多租户、实时流式 ASR、多 Agent 对照实验。GitHub sandbox 的既有证据为单仓库/单样本/单网络窗口，详见 Issue #57；不外推生产可靠性。`build/` 未跟踪目录会遮蔽本地 `build` 模块，打包验证使用隔离 cwd 绕过，未删除该用户文件。
