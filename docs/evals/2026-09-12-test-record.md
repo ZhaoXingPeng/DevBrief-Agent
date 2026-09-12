@@ -32,7 +32,7 @@ devbrief run <临时目录>/transcript.json
 
 ## 3. 包与发布
 
-从隔离工作目录执行 `py -3.13 -m build` 成功；wheel/sdist 均通过 `twine check`。临时 venv 安装 wheel 后 `devbrief --help` 成功。Web `npm ci` 与 `npm run build` 成功。远端 Release `v0.1.0` 已存在，包含 wheel、sdist、评测矩阵和本记录；Release asset SHA256 由 GitHub 提供。
+从隔离工作目录执行 `py -3.13 -m build` 成功；wheel/sdist 均通过 `twine check`。临时 venv 安装 wheel 后 `devbrief --help` 成功。Web `npm ci` 与 `npm run build` 成功。远端 Release `v0.1.1` 已发布，包含 0.1.1 wheel、sdist、评测矩阵和本记录；Release asset SHA256 由 GitHub 提供。
 
 ## 4. 结论与限制
 
