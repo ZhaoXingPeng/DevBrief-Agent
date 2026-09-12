@@ -78,7 +78,7 @@
 | EVAL-02 | 失败归因 | missing/unexpected/duplicate/field/no-evidence 分类稳定 | `tests/test_eval.py`、`test_eval_baseline.py` | E1 | 通过 | 需要人工标注扩充至业务规模 |
 | PERF-01 | 效率 | 同一输入报告 p50/p95 wall time、tool calls、模型 tokens、成本 | 设计项，尚无 runner | E0 | 未执行 | 增加基准脚本和重复次数后再报告 |
 | PROD-01 | 线上可靠性 | 错误率、恢复率、告警和版本漂移在部署环境可查询 | 生产观测未实现 | E0 | 未执行 | OTel/指标/鉴权独立 Issue |
-| REL-01 | 包/构建 | wheel/sdist 可安装，Web 静态资源可构建，版本与 Release 一致 | `py -3.13 -m build`（隔离 cwd）、`twine check`、临时 venv 安装、`npm run build` | E1 | 通过 | v0.1.0 已发布；安装后 Eval 仍需用户提供数据集/fixture 路径 |
+| REL-01 | 包/构建 | wheel/sdist 可安装，Web 静态资源可构建，版本与 Release 一致 | `py -3.13 -m build`（隔离 cwd）、`twine check`、临时 venv 安装、`npm run build` | E1 | 通过 | v0.1.1 已发布；安装后 Eval 仍需用户提供数据集/fixture 路径 |
 
 ## 4. 通过门槛
 
