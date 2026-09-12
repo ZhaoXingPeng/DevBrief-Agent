@@ -89,11 +89,11 @@
 
 ## 5. 当前结论与缺口
 
-项目已经符合 Agent Harness/AI Testing 岗位对“单 Agent 运行时、受控工具、审批、恢复、Eval、trace 和工程交付”的 MVP 证据要求。它还不符合生产级 Agent 平台的完整要求：没有生产鉴权/多租户/限流、OTel 线上指标、真实 GitHub sandbox 报告、较大真实 ASR/LLM 标注集、p95 成本/时延基线、实时流式语音或多 Agent 对照实验。
+项目已经符合 Agent Harness/AI Testing 岗位对“单 Agent 运行时、受控工具、审批、恢复、Eval、trace 和工程交付”的 MVP 证据要求。它还不符合生产级 Agent 平台的完整要求：没有生产鉴权/多租户/限流、OTel 线上指标、较大真实 ASR/LLM 标注集、p95 成本/时延基线、实时流式语音或多 Agent 对照实验。GitHub sandbox 已有 E3 单样本证据，但不代表生产可靠性。
 
 下一轮应按优先级补齐：
 
 1. 建立 50+ 条脱敏标注集和真实模型对照，报告字段错误与失败类别。
-2. 为 GitHub 建立专用 sandbox，演练超时、重复提交和 query-first 恢复。
+2. 扩展 GitHub sandbox 样本，演练超时、重复提交和 query-first 恢复。
 3. 增加性能 runner（至少 30 次，报告 p50/p95、token、工具调用和成本）。
 4. 接入 OTel/指标与生产鉴权前，不能宣称“生产级”或“支持多租户”。
