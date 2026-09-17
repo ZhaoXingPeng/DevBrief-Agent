@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -269,6 +270,7 @@ def test_web_json_run_approve_and_history(tmp_path: Path) -> None:
             ).read()
         )
         assert result["state"] == "awaiting_approval"
+        assert result["trace_summary"]["integrity_status"] == "verified"
         approval = json.dumps(
             {
                 "session_id": result["session_id"],
@@ -346,6 +348,70 @@ def test_web_restarts_and_approves_persisted_session(tmp_path: Path) -> None:
         )
         assert completed["state"] == "completed"
         assert completed["receipt"]["provider_request_id"] == "dry-run"
+    finally:
+        second.shutdown()
+        second.server_close()
+
+
+def test_web_rejects_tampered_trace_before_restart_can_approve(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "runs.sqlite3"
+    first = create_server(path=database, port=0)
+    first_thread = threading.Thread(target=first.serve_forever, daemon=True)
+    first_thread.start()
+    try:
+        base = f"http://127.0.0.1:{first.server_port}"
+        result = json.loads(
+            urlopen(
+                Request(
+                    f"{base}/api/run",
+                    data=json.dumps(
+                        {"path": "fixtures/transcripts/bug-triage-redacted-v1.json"}
+                    ).encode(),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+            ).read()
+        )
+    finally:
+        first.shutdown()
+        first.server_close()
+
+    with sqlite3.connect(database) as connection:
+        raw_trace = connection.execute(
+            "SELECT trace_json FROM triage_runs WHERE session_id = ?",
+            (result["session_id"],),
+        ).fetchone()[0]
+        traces = json.loads(raw_trace)
+        traces[0]["output_summary"] = "altered"
+        connection.execute(
+            "UPDATE triage_runs SET trace_json = ? WHERE session_id = ?",
+            (json.dumps(traces), result["session_id"]),
+        )
+
+    second = create_server(path=database, port=0)
+    second_thread = threading.Thread(target=second.serve_forever, daemon=True)
+    second_thread.start()
+    try:
+        base = f"http://127.0.0.1:{second.server_port}"
+        approval = Request(
+            f"{base}/api/approve",
+            data=json.dumps(
+                {
+                    "session_id": result["session_id"],
+                    "approver_id": "restart-test",
+                    "approved": True,
+                    "plan_hash": result["plan_hash"],
+                }
+            ).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with pytest.raises(HTTPError) as error:
+            urlopen(approval)
+        assert error.value.code == 400
+        assert b"stored trace integrity validation failed" in error.value.read()
     finally:
         second.shutdown()
         second.server_close()

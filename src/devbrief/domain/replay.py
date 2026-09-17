@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from devbrief.domain.contracts import (
+    Checkpoint,
     SessionState,
+    TraceIntegrityStatus,
     TraceReplayReport,
     TraceSpan,
 )
+from devbrief.domain.trace_integrity import verify_trace_integrity
 
 
 class TraceReplayer:
@@ -16,6 +19,7 @@ class TraceReplayer:
         self,
         spans: Sequence[TraceSpan],
         *,
+        checkpoints: Sequence[Checkpoint] = (),
         expected_final_state: SessionState | None = None,
         expected_plan_hash: str | None = None,
         expected_tool_decisions: Sequence[str] | None = None,
@@ -26,6 +30,10 @@ class TraceReplayer:
 
         first = spans[0]
         mismatches: list[str] = []
+        integrity = verify_trace_integrity(spans, checkpoints=checkpoints)
+        if integrity.status is TraceIntegrityStatus.INVALID:
+            for code in integrity.mismatches:
+                _add_once(mismatches, code)
         seen_span_ids: set[str] = set()
         state_sequence: list[SessionState] = []
         plan_hashes: list[str] = []
@@ -87,6 +95,8 @@ class TraceReplayer:
             plan_hashes=plan_hashes,
             tool_decisions=tool_decisions,
             receipt_refs=receipt_refs,
+            integrity_status=integrity.status,
+            integrity_mismatches=integrity.mismatches,
             mismatches=mismatches,
         )
 

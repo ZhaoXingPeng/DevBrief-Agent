@@ -298,6 +298,12 @@ class Checkpoint(StrictModel):
     completed_tool_call_ids: list[str] = Field(default_factory=list)
     idempotency_keys: list[str] = Field(default_factory=list)
     last_event_id: str | None = None
+    trace_span_count: int | None = Field(default=None, ge=0)
+    trace_head_hash: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
+    checkpoint_integrity_version: int | None = Field(default=None, ge=1)
+    checkpoint_integrity_hash: str | None = Field(
+        default=None, pattern=r"^sha256:[a-f0-9]{64}$"
+    )
     redacted_context_refs: list[str] = Field(default_factory=list)
     created_at: datetime
 
@@ -329,6 +335,27 @@ class TraceSpan(StrictModel):
     tool_name: str | None = None
     tool_decision: str | None = None
     receipt_id: str | None = None
+    integrity_version: int | None = Field(default=None, ge=1)
+    sequence: int | None = Field(default=None, ge=1)
+    previous_hash: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
+    integrity_hash: str | None = Field(default=None, pattern=r"^sha256:[a-f0-9]{64}$")
+
+
+class TraceIntegrityStatus(StrEnum):
+    VERIFIED = "verified"
+    LEGACY_UNSEALED = "legacy_unsealed"
+    INVALID = "invalid"
+
+
+class TraceIntegrityReport(StrictModel):
+    """Redacted verification result for an ordered trace and checkpoint anchors."""
+
+    status: TraceIntegrityStatus
+    trace_id: str | None = None
+    session_id: str | None = None
+    span_count: int = Field(ge=0)
+    anchored_checkpoint_count: int = Field(default=0, ge=0)
+    mismatches: list[str] = Field(default_factory=list)
 
 
 class TraceReplayReport(StrictModel):
@@ -342,6 +369,8 @@ class TraceReplayReport(StrictModel):
     plan_hashes: list[str] = Field(default_factory=list)
     tool_decisions: list[str] = Field(default_factory=list)
     receipt_refs: list[str] = Field(default_factory=list)
+    integrity_status: TraceIntegrityStatus = TraceIntegrityStatus.LEGACY_UNSEALED
+    integrity_mismatches: list[str] = Field(default_factory=list)
     mismatches: list[str] = Field(default_factory=list)
 
 

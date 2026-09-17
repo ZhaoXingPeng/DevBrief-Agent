@@ -7,6 +7,7 @@ import sys
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -15,13 +16,22 @@ from devbrief.application.evaluation import (
     load_eval_artifact,
 )
 from devbrief.application.orchestration import BugTriageApplication
-from devbrief.domain.contracts import ExecutionBudget, Plan
+from devbrief.domain.contracts import (
+    Checkpoint,
+    ExecutionBudget,
+    Plan,
+    TraceIntegrityReport,
+    TraceIntegrityStatus,
+    TraceSpan,
+)
 from devbrief.domain.errors import DevBriefError, ErrorCode
+from devbrief.domain.trace_integrity import verify_trace_integrity
 from devbrief.integration.media import MediaError, OpenAICompatibleMediaClient
 from devbrief.integration.repository import (
     RepositoryEvidenceError,
     WorkspaceRepositoryEvidence,
 )
+from devbrief.integration.storage import SQLiteRunStore
 from devbrief.integration.task_system import TaskSystemDraftClient, TaskSystemError
 from devbrief.integration.web import create_server
 
@@ -88,6 +98,12 @@ def _main() -> int:
     evaluation_output.add_argument(
         "--check", type=Path, help="fail when the result differs from a baseline"
     )
+    trace_verify = subparsers.add_parser(
+        "trace-verify",
+        help="verify one persisted trace hash chain without replaying it",
+    )
+    trace_verify.add_argument("session_id")
+    trace_verify.add_argument("--db", default="devbrief.sqlite3", type=Path)
     args = parser.parse_args()
     if args.command == "run":
         result = BugTriageApplication().run(
@@ -166,6 +182,10 @@ def _main() -> int:
         else:
             print(payload, end="")
         return 0
+    if args.command == "trace-verify":
+        report = _stored_trace_integrity_report(args.db, args.session_id)
+        print(report.model_dump_json(indent=2))
+        return 0 if report.status is TraceIntegrityStatus.VERIFIED else 2
     server = create_server(path=args.db, host=args.host, port=args.port)
     print(f"DevBrief Web Demo: http://{args.host}:{args.port}")
     server.serve_forever()
@@ -178,6 +198,63 @@ def _media_client() -> OpenAICompatibleMediaClient:
         "https://llm-3v3kgqdr8b0jtkjh.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
     )
     return OpenAICompatibleMediaClient(base_url=base_url)
+
+
+def _stored_trace_integrity_report(
+    database: Path, session_id: str
+) -> TraceIntegrityReport:
+    """Load only persisted audit metadata and return a redacted chain verdict."""
+    store = SQLiteRunStore(database)
+    result = store.get(session_id)
+    if result is None:
+        raise DevBriefError(ErrorCode.VALIDATION_ERROR, "session does not exist")
+    artifacts = store.get_artifacts(session_id)
+    traces = _stored_trace_spans(artifacts.get("traces"))
+    checkpoints = _stored_checkpoints(artifacts.get("checkpoints"))
+    report = verify_trace_integrity(traces, checkpoints=checkpoints)
+    if any(
+        item.session_id != result.session_id or item.trace_id != result.trace_id
+        for item in traces
+    ):
+        return report.model_copy(
+            update={
+                "status": TraceIntegrityStatus.INVALID,
+                "mismatches": [*report.mismatches, "stored_trace_owner_mismatch"],
+            }
+        )
+    return report
+
+
+def _stored_trace_spans(value: object | None) -> tuple[TraceSpan, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise DevBriefError(
+            ErrorCode.VALIDATION_ERROR, "stored trace artifact is invalid"
+        )
+    items = cast(list[object], value)
+    try:
+        return tuple(TraceSpan.model_validate(item) for item in items)
+    except (TypeError, ValueError) as exc:
+        raise DevBriefError(
+            ErrorCode.VALIDATION_ERROR, "stored trace artifact is invalid"
+        ) from exc
+
+
+def _stored_checkpoints(value: object | None) -> tuple[Checkpoint, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise DevBriefError(
+            ErrorCode.VALIDATION_ERROR, "stored checkpoint artifact is invalid"
+        )
+    items = cast(list[object], value)
+    try:
+        return tuple(Checkpoint.model_validate(item) for item in items)
+    except (TypeError, ValueError) as exc:
+        raise DevBriefError(
+            ErrorCode.VALIDATION_ERROR, "stored checkpoint artifact is invalid"
+        ) from exc
 
 
 if __name__ == "__main__":
