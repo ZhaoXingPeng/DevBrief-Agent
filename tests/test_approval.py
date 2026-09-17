@@ -91,6 +91,68 @@ def test_repository_rejects_duplicate_approval_ids() -> None:
     assert raised.value.code is ErrorCode.VALIDATION_ERROR
 
 
+def test_repository_owns_a_detached_copy_of_saved_approval() -> None:
+    current_plan = plan()
+    expires_at = NOW + timedelta(minutes=5)
+    submitted = approval(
+        plan_hash=compute_plan_hash(current_plan),
+        status=ApprovalStatus.PENDING,
+        scope=["read_issue"],
+        expires_at=expires_at,
+    )
+    repository = InMemoryApprovalRepository()
+    repository.save(submitted)
+
+    submitted.status = ApprovalStatus.APPROVED
+    submitted.scope.append("create_issue")
+    submitted.expires_at = NOW + timedelta(days=1)
+
+    stored = repository.get(submitted.approval_id)
+    assert stored is not None
+    assert stored.status is ApprovalStatus.PENDING
+    assert stored.scope == ["read_issue"]
+    assert stored.expires_at == expires_at
+
+    decision = ApprovalGate(repository, now=lambda: NOW).check(
+        request(plan_hash=compute_plan_hash(current_plan)), current_plan
+    )
+    assert decision.allowed is False
+    assert decision.error_code == ErrorCode.TOOL_NOT_ALLOWED.value
+
+
+def test_repository_detaches_returned_approval_models_from_stored_state() -> None:
+    current_plan = plan()
+    expires_at = NOW + timedelta(minutes=5)
+    repository = InMemoryApprovalRepository()
+    repository.save(approval(plan_hash=compute_plan_hash(current_plan)))
+
+    loaded = repository.get("apr_1")
+    assert loaded is not None
+    loaded.status = ApprovalStatus.PENDING
+    loaded.scope.clear()
+    loaded.expires_at = NOW
+
+    current = repository.get("apr_1")
+    assert current is not None
+    assert current.status is ApprovalStatus.APPROVED
+    assert current.scope == ["create_issue"]
+    assert current.expires_at == expires_at
+
+    consumed = repository.consume("apr_1")
+    consumed.status = ApprovalStatus.APPROVED
+    stored_consumed = repository.get("apr_1")
+    assert stored_consumed is not None
+    assert stored_consumed.status is ApprovalStatus.CONSUMED
+
+    expired_repository = InMemoryApprovalRepository()
+    expired_repository.save(approval(plan_hash=compute_plan_hash(current_plan)))
+    expired = expired_repository.mark_expired("apr_1")
+    expired.status = ApprovalStatus.APPROVED
+    stored_expired = expired_repository.get("apr_1")
+    assert stored_expired is not None
+    assert stored_expired.status is ApprovalStatus.EXPIRED
+
+
 def test_approved_matching_scope_and_hash_is_consumed_once() -> None:
     current_plan = plan()
     repository = InMemoryApprovalRepository()

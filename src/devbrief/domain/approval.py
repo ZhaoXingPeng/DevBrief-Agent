@@ -43,16 +43,17 @@ class InMemoryApprovalRepository:
                 ErrorCode.VALIDATION_ERROR,
                 f"approval id already exists: {approval.approval_id}",
             )
-        self._items[approval.approval_id] = approval
+        self._items[approval.approval_id] = _copy_approval(approval)
 
     def get(self, approval_id: str) -> Approval | None:
-        return self._items.get(approval_id)
+        approval = self._items.get(approval_id)
+        return _copy_approval(approval) if approval is not None else None
 
     def mark_expired(self, approval_id: str) -> Approval:
         approval = self._require(approval_id)
         updated = approval.model_copy(update={"status": ApprovalStatus.EXPIRED})
-        self._items[approval_id] = updated
-        return updated
+        self._items[approval_id] = _copy_approval(updated)
+        return _copy_approval(updated)
 
     def consume(self, approval_id: str) -> Approval:
         approval = self._require(approval_id)
@@ -62,8 +63,8 @@ class InMemoryApprovalRepository:
                 "only an approved approval can be consumed",
             )
         updated = approval.model_copy(update={"status": ApprovalStatus.CONSUMED})
-        self._items[approval_id] = updated
-        return updated
+        self._items[approval_id] = _copy_approval(updated)
+        return _copy_approval(updated)
 
     def _require(self, approval_id: str) -> Approval:
         approval = self.get(approval_id)
@@ -73,6 +74,11 @@ class InMemoryApprovalRepository:
                 "approval does not exist",
             )
         return approval
+
+
+def _copy_approval(approval: Approval) -> Approval:
+    """Keep mutable approval fields outside repository-owned authorization state."""
+    return approval.model_copy(deep=True)
 
 
 class ApprovalGate:
