@@ -213,6 +213,9 @@ Approval
 审批校验返回 `ApprovalDecision`，包含 `allowed`、`approval_id`、`plan_hash`、当前审批 `status`、错误码和脱敏原因。校验除了比较 `plan_hash`，还必须比较请求的工具名与规范化参数是否等于 `Plan.tool_name` 和 `Plan.arguments`；任一字段变化都拒绝并要求重新批准。
 
 - `plan_hash` 绑定任务标题、正文、目标仓库、标签、负责人和工具参数；任何字段变化都使旧审批失效。
+- `InMemoryApprovalRepository` 是 fake 路径中审批状态的唯一所有者。保存输入以及
+  `get`、`consume`、`mark_expired` 返回的 `Approval` 都必须是与内部状态分离的副本；调用方
+  修改 `status`、`expires_at` 或 `scope` 不得改变后续 `ApprovalGate` 的授权决定。
 
 本地 F4 planner 产生 `TaskDraft`：`Plan`、稳定 `plan_hash`、证据引用、待澄清字段和
 `SimilarIssue[]`。相似项只允许提供相似度、理由和 `review_required=true`，不能被标记
