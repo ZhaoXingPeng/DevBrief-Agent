@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,6 +16,15 @@ from devbrief.domain.contracts import (
     TraceSpan,
     TriageRunResult,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class StoredRunRecord:
+    """Validated result and audit artifacts read without mutating SQLite."""
+
+    result: TriageRunResult
+    traces: tuple[TraceSpan, ...]
+    checkpoints: tuple[Checkpoint, ...]
 
 
 class SQLiteRunStore:
@@ -141,6 +151,34 @@ class SQLiteRunStore:
             for row in rows
         )
 
+    def list_records_for_metrics(self) -> tuple[StoredRunRecord, ...]:
+        """Read all metric inputs through a SQLite read-only connection.
+
+        This intentionally does not call ``initialize``: callers can inspect an
+        existing database without creating it or applying a migration.
+        """
+        if not self.path.is_file():
+            raise FileNotFoundError("metrics database does not exist")
+        database_uri = f"{self.path.resolve().as_uri()}?mode=ro"
+        with sqlite3.connect(database_uri, uri=True) as connection:
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(triage_runs)")
+            }
+            required = {"session_id", "trace_id", "state", "result_json"}
+            if not required.issubset(columns):
+                raise ValueError("metrics database has no compatible run records")
+            traces_column = "trace_json" if "trace_json" in columns else "NULL"
+            checkpoints_column = (
+                "checkpoint_json" if "checkpoint_json" in columns else "NULL"
+            )
+            rows = connection.execute(
+                "SELECT session_id, trace_id, state, result_json, "
+                f"{traces_column}, {checkpoints_column} "
+                "FROM triage_runs ORDER BY session_id"
+            ).fetchall()
+        return tuple(_stored_record(row) for row in rows)
+
 
 def _dump(value: object | None) -> str | None:
     if value is None:
@@ -158,3 +196,48 @@ def _dump(value: object | None) -> str | None:
 
 def _load(value: str | None) -> object | None:
     return json.loads(value) if value else None
+
+
+def _stored_record(row: object) -> StoredRunRecord:
+    values = cast(tuple[object, ...], row)
+    if len(values) != 6:
+        raise ValueError("metrics record has an invalid shape")
+    session_id, trace_id, state, result_json, traces_json, checkpoints_json = values
+    if not all(isinstance(item, str) for item in (session_id, trace_id, state)):
+        raise ValueError("metrics record has an invalid identity")
+    result = TriageRunResult.model_validate(_json_object(result_json))
+    if (
+        result.session_id != session_id
+        or result.trace_id != trace_id
+        or result.state.value != state
+    ):
+        raise ValueError("metrics record does not match its persisted identity")
+    return StoredRunRecord(
+        result=result,
+        traces=tuple(
+            TraceSpan.model_validate(item) for item in _json_list(traces_json)
+        ),
+        checkpoints=tuple(
+            Checkpoint.model_validate(item) for item in _json_list(checkpoints_json)
+        ),
+    )
+
+
+def _json_object(value: object) -> dict[str, object]:
+    if not isinstance(value, str):
+        raise ValueError("metrics result artifact is invalid")
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise ValueError("metrics result artifact is invalid")
+    return cast(dict[str, object], parsed)
+
+
+def _json_list(value: object) -> list[object]:
+    if value is None:
+        return []
+    if not isinstance(value, str):
+        raise ValueError("metrics audit artifact is invalid")
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        raise ValueError("metrics audit artifact is invalid")
+    return cast(list[object], parsed)

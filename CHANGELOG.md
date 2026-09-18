@@ -8,6 +8,8 @@
 - 增加 SHA-256 审计 trace 因果链、checkpoint anchor、SQLite/CLI 验证与损坏恢复拒绝；不将其表述为带密钥的不可篡改日志。
 - 增加无凭据 deterministic Bug Triage benchmark，输出脱敏的 p50/p95、状态/错误和预算聚合，并支持可选的本机 p95 门禁。
 - 增加版本化 Harness safety eval，聚合验证写入拒绝、幂等、query-first 与 trace 损坏恢复；不将 fake 场景表述为生产红队或 Provider 安全结论。
+- 增加只读 `devbrief metrics`，从已有 SQLite 运行记录输出 schema version 1 的聚合-only
+  脱敏指标快照；缺失数据库或损坏 artifact 不会创建数据库或输出部分结果。
 
 ## 0.1.1 - 2026-09-12
 

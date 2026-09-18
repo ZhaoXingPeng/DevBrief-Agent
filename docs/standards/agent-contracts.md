@@ -332,7 +332,19 @@ BenchmarkReport
 - 可选 `--max-p95-ms` 仅是调用者当前环境的门禁。它不能被表述为跨机器、真实 Provider 或
   生产 SLO；门禁失败时 CLI 仍先保留 artifact，再返回稳定的非零状态。
 
-## 13. Harness Safety Eval
+## 13. Runtime Metrics Snapshot
+
+`RuntimeMetricsSnapshot` 是从已有 SQLite 运行记录计算的 schema version `1` 聚合契约。它只
+包含会话/状态、固定错误码、trace kind、受限工具名、model/tool/span/checkpoint/recover
+计数、trace integrity 状态与 mismatch 计数，以及预算消耗总计。所有字典按稳定顺序输出，
+不允许把 trace 摘要、工具参数、计划正文、凭据或数据库原始行带入快照。
+
+`devbrief metrics --db <path> [--output <path>]` 以只读方式打开已有数据库；缺失数据库、
+不兼容表结构、非法结果/trace/checkpoint artifact 或不支持的契约版本必须整体以
+`validation_error` 失败，不能创建数据库或输出部分快照。完整性损坏的合法 artifact 不会
+泄露原文，而是在 `trace_integrity_counts` 与 `trace_integrity_mismatch_counts` 中聚合。
+
+## 14. Harness Safety Eval
 
 `devbrief safety-eval` 是独立于候选质量 Eval 和 runtime benchmark 的 fake-only 安全回归
 路径。`SafetyEvalDataset` 使用版本化 `dataset_id` / `dataset_version` 和至少一个

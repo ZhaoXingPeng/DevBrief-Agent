@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import StrEnum
 from math import isfinite
 from pathlib import PurePosixPath
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -454,6 +455,107 @@ class TraceIntegrityReport(StrictModel):
     span_count: int = Field(ge=0)
     anchored_checkpoint_count: int = Field(default=0, ge=0)
     mismatches: list[str] = Field(default_factory=list)
+
+
+_SAFE_METRIC_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+
+
+class RuntimeMetricsBudgetTotals(StrictModel):
+    """Aggregate budget consumption without retaining per-session details."""
+
+    session_count: int = Field(ge=0)
+    consumed_steps: int = Field(ge=0)
+    consumed_tool_calls: int = Field(ge=0)
+    consumed_model_tokens: int = Field(ge=0)
+    consumed_cost: float = Field(ge=0)
+
+    @field_validator("consumed_cost")
+    @classmethod
+    def _require_finite_cost(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("runtime metrics cost must be finite")
+        return value
+
+
+class RuntimeMetricsSnapshot(StrictModel):
+    """Versioned aggregate-only observability output for persisted runs."""
+
+    schema_version: Literal[1] = 1
+    session_count: int = Field(ge=0)
+    state_counts: dict[SessionState, int] = Field(
+        default_factory=lambda: dict[SessionState, int]()
+    )
+    error_counts: dict[ErrorCode, int] = Field(
+        default_factory=lambda: dict[ErrorCode, int]()
+    )
+    trace_kind_counts: dict[TraceKind, int] = Field(
+        default_factory=lambda: dict[TraceKind, int]()
+    )
+    tool_counts: dict[str, int] = Field(default_factory=lambda: dict[str, int]())
+    span_count: int = Field(ge=0)
+    model_call_count: int = Field(ge=0)
+    tool_call_count: int = Field(ge=0)
+    checkpoint_count: int = Field(ge=0)
+    recover_count: int = Field(ge=0)
+    trace_integrity_counts: dict[TraceIntegrityStatus, int] = Field(
+        default_factory=lambda: dict[TraceIntegrityStatus, int]()
+    )
+    trace_integrity_mismatch_counts: dict[str, int] = Field(
+        default_factory=lambda: dict[str, int]()
+    )
+    budget_totals: RuntimeMetricsBudgetTotals
+
+    @model_validator(mode="after")
+    def _require_consistent_counts(self) -> Self:
+        count_maps = (
+            self.state_counts,
+            self.error_counts,
+            self.trace_kind_counts,
+            self.tool_counts,
+            self.trace_integrity_counts,
+            self.trace_integrity_mismatch_counts,
+        )
+        if any(count < 0 for mapping in count_maps for count in mapping.values()):
+            raise ValueError("runtime metrics counts must be non-negative")
+        if self.budget_totals.session_count != self.session_count:
+            raise ValueError("runtime metrics budget count is inconsistent")
+        if sum(self.state_counts.values()) != self.session_count:
+            raise ValueError("runtime metrics state counts must cover every session")
+        if sum(self.trace_integrity_counts.values()) != self.session_count:
+            raise ValueError(
+                "runtime metrics integrity counts must cover every session"
+            )
+        if self.model_call_count != self.trace_kind_counts.get(TraceKind.MODEL_CALL, 0):
+            raise ValueError("runtime metrics model call count is inconsistent")
+        if self.tool_call_count != self.trace_kind_counts.get(TraceKind.TOOL_CALL, 0):
+            raise ValueError("runtime metrics tool call count is inconsistent")
+        if sum(self.trace_kind_counts.values()) != self.span_count:
+            raise ValueError("runtime metrics span count is inconsistent")
+        return self
+
+    @field_validator("tool_counts")
+    @classmethod
+    def _require_safe_tool_names(cls, value: dict[str, int]) -> dict[str, int]:
+        if any(not _SAFE_METRIC_NAME.fullmatch(name) for name in value):
+            raise ValueError("runtime metrics tool names must be safe identifiers")
+        return value
+
+    @field_validator("trace_integrity_mismatch_counts")
+    @classmethod
+    def _require_safe_mismatch_names(cls, value: dict[str, int]) -> dict[str, int]:
+        if any(not _SAFE_METRIC_NAME.fullmatch(name) for name in value):
+            raise ValueError("runtime metrics mismatch names must be safe identifiers")
+        return value
+
+    @property
+    def integrity_status_counts(self) -> dict[TraceIntegrityStatus, int]:
+        """Compatibility alias for callers that use the shorter metric name."""
+        return self.trace_integrity_counts
+
+    @property
+    def integrity_mismatch_counts(self) -> dict[str, int]:
+        """Compatibility alias for callers that use the shorter metric name."""
+        return self.trace_integrity_mismatch_counts
 
 
 class TraceReplayReport(StrictModel):

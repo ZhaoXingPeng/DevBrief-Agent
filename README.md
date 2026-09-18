@@ -60,6 +60,7 @@ Triage fixture，经过分析、证据上下文、任务计划、策略和人工
 | Trace / Replay | 脱敏事件、SHA-256 因果链、checkpoint seal/锚点、回放和漂移报告 |
 | Benchmark | 版本化、脱敏的 deterministic Bug Triage 重复运行，p50/p95、状态/错误与预算聚合 |
 | Safety Eval | 版本化 Harness 安全场景，验证写入拒绝、幂等、query-first 与损坏恢复边界 |
+| Observability | 从本地 SQLite 生成版本化、聚合-only 的脱敏运行指标快照 |
 
 ## 架构
 
@@ -84,6 +85,7 @@ devbrief run fixtures/transcripts/bug-triage-redacted-v1.json
 devbrief serve --port 8000
 devbrief approve <session_id> --url http://127.0.0.1:8000
 devbrief trace-verify <session_id> --db devbrief.sqlite3
+devbrief metrics --db devbrief.sqlite3 --output metrics.json
 devbrief evidence README.md
 devbrief draft plan.json
 devbrief eval --check docs/evals/bug-triage-v1-baseline.json
@@ -144,6 +146,13 @@ Web 前端位于 `web/`，使用 Vue 3 + Vite 构建；`devbrief serve` 优先�
 `legacy_unsealed` 或 `invalid` 及固定 mismatch code。新会话以 SHA-256 因果链和
 checkpoint seal/anchor 检测局部 trace 或恢复快照损坏；这不是带密钥的不可篡改日志，拥有
 全部数据库写权限的攻击者仍可重写整条链。完整取舍见 [ADR 0002](docs/adr/0002-trace-integrity-chain.md)。
+
+`devbrief metrics` 只读已有 SQLite 文件，不创建缺失数据库或迁移 schema。它输出
+`RuntimeMetricsSnapshot`（schema version 1），仅包含会话/状态、固定错误码、trace kind、
+工具名、模型/工具/span/checkpoint/recover 计数、trace integrity 状态与 mismatch 计数，
+以及预算消耗汇总；不包含转写、trace 摘要、工具参数、计划正文、凭据或数据库原始行。
+损坏 artifact 和缺失数据库会返回退出码 `2`，不会写出部分快照。指标边界与字段见
+[Runtime Metrics](docs/observability/runtime-metrics.md)。
 
 `devbrief safety-eval` 运行版本化、无凭据的 Harness 安全场景，验证未批准/过期/scope/hash
 篡改/预算耗尽不会触发 fake provider 写入，幂等重放只写一次，unknown outcome 只 query-first，
