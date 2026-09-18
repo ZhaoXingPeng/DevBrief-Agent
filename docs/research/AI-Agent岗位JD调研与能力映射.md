@@ -154,7 +154,7 @@
 
 ### 7.2 当前已落地与尚未实现的能力
 
-截至 2026-09-10，`main` 已包含可运行的单 Agent Harness、Vue Web、SQLite、GitHub/百炼适配器、仓库证据和任务 draft API。下表区分“代码与测试已证明”和“仍需独立设计/实验”，避免把路线图写成完成事实。
+截至 2026-09-18，当前代码已包含可运行的单 Agent Harness、Vue Web、SQLite、GitHub/百炼适配器、仓库证据和任务 draft API。下表区分“代码与测试已证明”和“仍需独立设计/实验”，避免把路线图写成完成事实。
 
 | 能力 | 对应 JD 能力 | 当前状态 |
 | --- | --- | --- |
@@ -162,6 +162,7 @@
 | Policy + approval + idempotency 边界 | 权限、安全、外部副作用治理 | 已实现；生产鉴权仍待补 |
 | 状态恢复和 `unknown_outcome` 语义 | 中断/超时/失败安全 | fake provider 已覆盖；真实 provider query 需独立实现 |
 | 固定 Eval 和 trace 要求 | 评测、可观测、回归 | Eval runner、trace/replay 已实现；线上指标待补 |
+| 版本化 runtime benchmark artifact | p50/p95 时延、工具/模型/成本、失败归因 | 已实现无凭据 fake runner、nearest-rank 口径和可选本机 p95 gate；不是生产或真实 Provider 基线 |
 | Port/Adapter 分层 | Provider 可替换、工程化 | GitHub、百炼、仓库、任务系统 adapter 已实现 |
 | 单 Agent Harness、预算、checkpoint 和回放 | Runtime、长程执行、恢复、Harness | 已实现并接入 Web/SQLite；新 trace 以 hash 链和 checkpoint anchor 验证局部损坏 |
 
@@ -172,7 +173,8 @@
 | P0 | 无凭据可跑的 CLI/API Demo；固定转写 fixture；类型化事件和状态机 | Python、工程项目、Agent Workflow、结构化表达 |
 | P0 | 单 Agent Harness：step/deadline/budget 限制、checkpoint、重放、幂等执行 | Runtime、长程执行、执行控制、中断恢复、Harness |
 | P0 | 工具注册表、只读/草稿/外部写三级权限、审批与 receipt | Tool Calling、MCP/API/CLI、权限、安全、审计 |
-| P1 | 版本化标注集、Eval runner、失败分类、基线与回归报告 | Eval、质量管控、A/B/回归、效果归因 |
+| P1 | 扩展版本化标注集、真实模型对照与失败归因 | Eval、质量管控、A/B/回归、效果归因 |
+| P1 | 受控真实 Provider/跨机器时延与成本实验记录 | Performance、Cost、Observability；不能把 fake 基准外推 |
 | P1 | trace spans、结构化日志、指标、失败会话回放页/命令 | Observability、Tracing、Replay、排障 |
 | P1 | GitHub 只读证据检索与受控 Issue 写入 Adapter | RAG、工具编排、业务落地、生产集成 |
 | P2 | 流式 ASR/语音输入适配器和时延实验 | 多模态/语音特色；不替代 Harness 主线 |
@@ -189,6 +191,8 @@
 4. 修改任务草稿后旧批准立即失效；未批准的外部写不可调用。
 5. 对同一固定样本集可以运行 Eval，并输出样本版本、模型/提示词版本、字段指标、证据覆盖、失败分类。
 6. Demo 默认不需要真实 GitHub token、真实音频或在线模型；真实集成单独标记为实验环境。
+7. 对同一公开脱敏 fixture 可以重复运行 benchmark，审阅 p50/p95、状态/错误和预算聚合；p95
+   gate 仅用于当前机器，artifact 不保存逐轮 trace 或源文本。
 
 这些证据可同时覆盖字节的 Harness/AI Testing/AI Coding 样本、京东的 Agent 架构/数据/安全样本，以及百度的智能体/大模型工程/AI 测试样本。
 
@@ -199,7 +203,8 @@
 ```text
 构建面向研发 Bug Triage 的可恢复 Agent Harness：以类型化状态机编排
 证据检索、计划、审批与 GitHub Issue 写入；实现 checkpoint、幂等回执和
-失败回放，并通过版本化 Eval 集报告字段准确率、证据覆盖与回归结果。
+失败回放，并通过版本化 Eval 与脱敏 benchmark artifact 报告字段质量、回归和
+fake 路径的时延/预算口径。
 ```
 
 其中“实现”和“报告”的前提是仓库中确实存在可运行命令、测试、样本和生成报告。没有真实基线时，不填充虚构的准确率、时延、成本或用户收益。

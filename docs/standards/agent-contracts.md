@@ -294,3 +294,40 @@ sample 只保存相对于数据集文件的 fixture 路径与人工 `expected` �
   `2` 失败，不能静默更新基线。
 - fake 基线只证明回归契约和固定路径行为。真实模型、ASR、检索或外部工具的质量、时延与
   成本必须在独立实验记录中标注环境、版本、样本范围和不可外推限制。
+
+## 12. Runtime Benchmark Artifact
+
+`devbrief benchmark` 使用公开、合成、`redacted=true` 的 fixture 重复运行当前
+deterministic Bug Triage 路径。它的 `BenchmarkArtifact` 是独立于 `EvalArtifact` 的
+版本化聚合输出，包含：
+
+```text
+BenchmarkArtifact
+  schema_version
+  workload_id / workload_version
+  fixture_path (相对于 fixtures root 的 POSIX 路径)
+  fixture_digest (sha256:<canonical-fixture-digest>)
+  warmup_iterations / measurement_iterations
+  report: BenchmarkReport
+
+BenchmarkReport
+  latency: sample_count, min_ms, p50_ms, p95_ms, max_ms
+  state_counts
+  error_counts
+  budget_totals: result_count, steps, tool_calls, model_tokens, cost
+```
+
+- 测量使用单调时钟的 wall time；warmup 只预热路径，不计入 `latency`、状态、错误或预算。
+  p50/p95 使用 nearest-rank：将 `n` 个升序值按 `rank = ceil(p * n)` 取第 `rank` 个值。
+- 每个测量轮只能归入一个 `state_counts` 状态。预期的 `DevBriefError` 归一为
+  `failed_terminal`，并在 `error_counts` 按固定 `ErrorCode` 计数；意外异常不能静默变成
+  benchmark 数据。
+- `budget_totals` 只汇总成功返回 `TriageRunResult` 的预算，`result_count` 明确该分母。
+  `state_counts` 总和必须等于测量次数，错误总数不得超过测量次数，`result_count` 必须等于
+  测量次数减错误次数；每个错误还必须由一个 `failed_terminal` 状态覆盖。latency 和 cost
+  必须为非负有限数，不能让 `NaN` 或 `Infinity` 进入 JSON artifact 或 p95 gate。
+- artifact 禁止保存逐轮 session/trace、原始转写、候选正文、token、provider 响应、凭据或
+  机器身份信息。fixture 越界、未脱敏、无效迭代或负/非有限 p95 阈值必须在创建 Harness 前
+  以 `validation_error` 拒绝。
+- 可选 `--max-p95-ms` 仅是调用者当前环境的门禁。它不能被表述为跨机器、真实 Provider 或
+  生产 SLO；门禁失败时 CLI 仍先保留 artifact，再返回稳定的非零状态。

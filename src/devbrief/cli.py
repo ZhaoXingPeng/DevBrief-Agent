@@ -11,6 +11,11 @@ from typing import cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from devbrief.application.benchmark import (
+    DeterministicBenchmarkService,
+    p95_exceeds,
+    validate_max_p95_ms,
+)
 from devbrief.application.evaluation import (
     DeterministicEvalService,
     load_eval_artifact,
@@ -98,6 +103,35 @@ def _main() -> int:
     evaluation_output.add_argument(
         "--check", type=Path, help="fail when the result differs from a baseline"
     )
+    benchmark = subparsers.add_parser(
+        "benchmark", help="measure the deterministic local Bug Triage workload"
+    )
+    benchmark.add_argument(
+        "--fixture",
+        type=Path,
+        default=Path("fixtures/transcripts/bug-triage-redacted-v1.json"),
+        help="public redacted fixture below the fixtures root",
+    )
+    benchmark.add_argument(
+        "--iterations",
+        type=int,
+        default=30,
+        help="measured iterations (1-1000)",
+    )
+    benchmark.add_argument(
+        "--warmup",
+        type=int,
+        default=3,
+        help="unreported warmup iterations (0-1000)",
+    )
+    benchmark.add_argument(
+        "--max-p95-ms",
+        type=float,
+        help="optional local p95 gate; it is not a production SLO",
+    )
+    benchmark.add_argument(
+        "--output", type=Path, help="write the redacted aggregate artifact"
+    )
     trace_verify = subparsers.add_parser(
         "trace-verify",
         help="verify one persisted trace hash chain without replaying it",
@@ -181,6 +215,26 @@ def _main() -> int:
             args.output.write_text(payload, encoding="utf-8")
         else:
             print(payload, end="")
+        return 0
+    if args.command == "benchmark":
+        validate_max_p95_ms(args.max_p95_ms)
+        artifact = DeterministicBenchmarkService().run(
+            args.fixture,
+            measurement_iterations=args.iterations,
+            warmup_iterations=args.warmup,
+        )
+        payload = artifact.model_dump_json(indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8")
+        else:
+            print(payload, end="")
+        if p95_exceeds(artifact, max_p95_ms=args.max_p95_ms):
+            print(
+                "devbrief benchmark gate: p95_ms exceeds --max-p95-ms",
+                file=sys.stderr,
+            )
+            return 3
         return 0
     if args.command == "trace-verify":
         report = _stored_trace_integrity_report(args.db, args.session_id)

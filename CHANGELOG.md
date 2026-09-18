@@ -6,6 +6,7 @@
 
 - 修复内存审批仓库的可变引用泄漏，调用方不能通过修改返回对象改变后续授权状态、有效期或工具 scope。
 - 增加 SHA-256 审计 trace 因果链、checkpoint anchor、SQLite/CLI 验证与损坏恢复拒绝；不将其表述为带密钥的不可篡改日志。
+- 增加无凭据 deterministic Bug Triage benchmark，输出脱敏的 p50/p95、状态/错误和预算聚合，并支持可选的本机 p95 门禁。
 
 ## 0.1.1 - 2026-09-12
 
