@@ -1,10 +1,12 @@
 # DevBrief Agent 完整评测矩阵
 
-**版本：** 1.0  
+**版本：** 1.1
 **评测日期：** 2026-09-11（Asia/Hong_Kong）  
 **被测提交：** `1f6bd3907652901f8ea86d0947d5704d632c9dd5`  
 **范围：** 单 Agent Harness、Bug Triage 工作流、工具/审批/回执、SQLite/Web、百炼 ASR/TTS 适配器。  
 **不包含：** 生产鉴权、多租户、实时流式 ASR、多 Agent、模型训练、自动代码修改和 PR 合并。
+
+**PERF-01 更新：** 2026-09-18（Asia/Hong_Kong），实现与 D2 fake 证据见 [Issue #84](https://github.com/ZhaoXingPeng/DevBrief-Agent/issues/84)。本次只新增无凭据 deterministic runner 的指标口径和回归测试，不将本机测量写成真实 Provider 或生产基线。
 
 ## 1. 评测方法基线
 
@@ -35,7 +37,7 @@
 | 上下文、Memory、RAG | CTX、EVID | E1 | 有界证据和不可信数据隔离已验证；无向量索引/长期记忆 |
 | 工具协议与编排 | TOOL、DISP | E1/E2 | Registry、Schema、Policy、Dispatcher 契约已验证 |
 | Runtime、恢复、幂等 | REC、EXT、WEB | E1/E2 | SQLite 重启、回执重放、query-first 已验证 |
-| Eval、回归、失败归因 | EVAL | E1 | 固定 fake 基线已验证；真实模型质量集尚未建立 |
+| Eval、回归、失败归因 | EVAL、PERF | E1/E2 | 固定 fake Eval 与 runtime benchmark artifact 已验证；真实模型质量集和 Provider 性能实验尚未建立 |
 | Trace、回放、观测 | TRACE | E1/E2 | 脱敏 trace、hash 链、checkpoint seal/anchor、replay 与 SQLite restart 已验证；无 OTel/线上告警 |
 | 安全与权限 | SEC、APP | E1/E2 | external-write 必须 Policy + 精确审批；无生产身份认证 |
 | 语音/多模态 | MEDIA | E4（受控真实） | 百炼 TTS→ASR 往返成功；样本少，不代表 ASR 质量基线 |
@@ -77,7 +79,7 @@
 | MEDIA-02 | provider 失败 | 缺 key/HTTP 错误/非法 JSON 返回 `MediaError`，不泄露响应正文 | `tests/test_integrations.py` | E1 | 通过 | 真实限流/断网待演练 |
 | EVAL-01 | 离线质量 | 固定数据集输出 candidate P/R/F1、字段准确率、证据覆盖 | `devbrief eval --check ...` | E1 | 通过 | 当前仅 2 个 fake 样本 |
 | EVAL-02 | 失败归因 | missing/unexpected/duplicate/field/no-evidence 分类稳定 | `tests/test_eval.py`、`test_eval_baseline.py` | E1 | 通过 | 需要人工标注扩充至业务规模 |
-| PERF-01 | 效率 | 同一输入报告 p50/p95 wall time、tool calls、模型 tokens、成本 | 设计项，尚无 runner | E0 | 未执行 | 增加基准脚本和重复次数后再报告 |
+| PERF-01 | 效率 | 同一公开脱敏输入报告 p50/p95/min/max wall time、状态/错误、tool calls、模型 tokens、成本；nearest-rank 和 p95 gate 可复核 | `tests/test_benchmark.py`、`devbrief benchmark --iterations 30 --warmup 3 --output benchmark.json` | E1/E2 | 通过 | 仅无凭据 fake 路径；真实 Provider、跨机器分布与生产 SLO 独立记录 |
 | PROD-01 | 线上可靠性 | 错误率、恢复率、告警和版本漂移在部署环境可查询 | 生产观测未实现 | E0 | 未执行 | OTel/指标/鉴权独立 Issue |
 | REL-01 | 包/构建 | wheel/sdist 可安装，Web 静态资源可构建，版本与 Release 一致 | `py -3.13 -m build`（隔离 cwd）、`twine check`、临时 venv 安装、`npm run build` | E1 | 通过 | v0.1.1 已发布；安装后 Eval 仍需用户提供数据集/fixture 路径 |
 
@@ -85,16 +87,17 @@
 
 - **契约门槛：** CON/HAR/TOOL/APP/TRACE/REC 必须全通过；任何越权写、审批绕过或脱敏失败为阻断项。
 - **离线质量门槛：** 当前 fake 基线 `sample_count=2`，candidate Precision/Recall/F1、字段准确率和证据覆盖均为 `1.0`；该数值只适用于 `bug-triage-fake-baseline@1.0.0`。
+- **fake runtime benchmark 门槛：** 公开脱敏 fixture 的 artifact 必须有完整 p50/p95/min/max、状态/错误和预算聚合；可选 p95 gate 只能比较调用者显式给出的本机阈值，不能升级为生产 SLO。
 - **真实语音门槛：** TTS 和 ASR 均返回可解析结果，fixture `redacted=true`，并清理临时文件；不以单句结果推导 WER 或生产可用性。
 - **发布门槛：** Python 质量门禁、Web 构建、Markdown 链接和 Eval check 全通过；Release artifact 可下载并用 SHA256 校验。
 
 ## 5. 当前结论与缺口
 
-项目已经符合 Agent Harness/AI Testing 岗位对“单 Agent 运行时、受控工具、审批、恢复、Eval、trace 和工程交付”的 MVP 证据要求。它还不符合生产级 Agent 平台的完整要求：没有生产鉴权/多租户/限流、OTel 线上指标、较大真实 ASR/LLM 标注集、p95 成本/时延基线、实时流式语音或多 Agent 对照实验。GitHub sandbox 已有 E3 单样本证据，但不代表生产可靠性。
+项目已经符合 Agent Harness/AI Testing 岗位对“单 Agent 运行时、受控工具、审批、恢复、Eval、trace、runtime benchmark 和工程交付”的 MVP 证据要求。它还不符合生产级 Agent 平台的完整要求：没有生产鉴权/多租户/限流、OTel 线上指标、较大真实 ASR/LLM 标注集、真实 Provider 或跨机器 p95 成本/时延基线、实时流式语音或多 Agent 对照实验。GitHub sandbox 已有 E3 单样本证据，但不代表生产可靠性。
 
 下一轮应按优先级补齐：
 
 1. 建立 50+ 条脱敏标注集和真实模型对照，报告字段错误与失败类别。
 2. 扩展 GitHub sandbox 样本，演练超时、重复提交和 query-first 恢复。
-3. 增加性能 runner（至少 30 次，报告 p50/p95、token、工具调用和成本）。
+3. 在独立实验记录中扩展真实 Provider/跨机器时延、成本和失败分布，不能复用 fake 结果。
 4. 接入 OTel/指标与生产鉴权前，不能宣称“生产级”或“支持多租户”。

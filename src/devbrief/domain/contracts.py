@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from math import isfinite
+from pathlib import PurePosixPath
+from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from devbrief.domain.errors import ErrorCode
 
 
 class StrictModel(BaseModel):
@@ -261,6 +265,100 @@ class EvalArtifact(StrictModel):
     dataset_id: str = Field(min_length=1)
     dataset_version: str = Field(min_length=1)
     report: EvalReport
+
+
+class BenchmarkLatencySummary(StrictModel):
+    """Aggregate monotonic wall-time measurements in milliseconds."""
+
+    sample_count: int = Field(gt=0)
+    min_ms: float = Field(ge=0)
+    p50_ms: float = Field(ge=0)
+    p95_ms: float = Field(ge=0)
+    max_ms: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _require_ordered_percentiles(self) -> Self:
+        if any(
+            not isfinite(value)
+            for value in (self.min_ms, self.p50_ms, self.p95_ms, self.max_ms)
+        ):
+            raise ValueError("benchmark latency values must be finite")
+        if not self.min_ms <= self.p50_ms <= self.p95_ms <= self.max_ms:
+            raise ValueError("benchmark latency percentiles must be ordered")
+        return self
+
+
+class BenchmarkBudgetTotals(StrictModel):
+    """Budget consumption aggregated only from successful workload results."""
+
+    result_count: int = Field(ge=0)
+    consumed_steps: int = Field(ge=0)
+    consumed_tool_calls: int = Field(ge=0)
+    consumed_model_tokens: int = Field(ge=0)
+    consumed_cost: float = Field(ge=0)
+
+    @field_validator("consumed_cost")
+    @classmethod
+    def _require_finite_cost(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("benchmark cost must be finite")
+        return value
+
+
+class BenchmarkReport(StrictModel):
+    """Redacted aggregate outcomes for one measured benchmark workload."""
+
+    latency: BenchmarkLatencySummary
+    state_counts: dict[SessionState, int]
+    error_counts: dict[ErrorCode, int]
+    budget_totals: BenchmarkBudgetTotals
+
+    @model_validator(mode="after")
+    def _require_consistent_aggregate_counts(self) -> Self:
+        state_total = sum(self.state_counts.values())
+        error_total = sum(self.error_counts.values())
+        if any(count < 0 for count in self.state_counts.values()):
+            raise ValueError("benchmark state counts must be non-negative")
+        if any(count < 0 for count in self.error_counts.values()):
+            raise ValueError("benchmark error counts must be non-negative")
+        if state_total != self.latency.sample_count:
+            raise ValueError("benchmark state counts must cover every sample")
+        if error_total > self.latency.sample_count:
+            raise ValueError("benchmark error counts exceed the sample count")
+        if self.state_counts.get(SessionState.FAILED_TERMINAL, 0) < error_total:
+            raise ValueError("benchmark errors must map to failed terminal states")
+        if self.budget_totals.result_count != self.latency.sample_count - error_total:
+            raise ValueError("benchmark budget result count is inconsistent")
+        return self
+
+
+class BenchmarkArtifact(StrictModel):
+    """Versioned, source-free benchmark output for a redacted fixture workload."""
+
+    schema_version: int = Field(default=1, ge=1)
+    workload_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    workload_version: str = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    )
+    fixture_path: str = Field(min_length=1)
+    fixture_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    warmup_iterations: int = Field(ge=0)
+    measurement_iterations: int = Field(gt=0)
+    report: BenchmarkReport
+
+    @field_validator("fixture_path")
+    @classmethod
+    def _require_relative_posix_fixture_path(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if "\\" in value or value == "." or path.is_absolute() or ".." in path.parts:
+            raise ValueError("benchmark fixture path must be a relative POSIX path")
+        return path.as_posix()
+
+    @model_validator(mode="after")
+    def _require_report_sample_count(self) -> Self:
+        if self.report.latency.sample_count != self.measurement_iterations:
+            raise ValueError("benchmark latency sample count must match iterations")
+        return self
 
 
 class ExecutionBudget(StrictModel):
