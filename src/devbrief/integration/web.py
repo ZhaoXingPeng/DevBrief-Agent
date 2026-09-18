@@ -40,6 +40,7 @@ from devbrief.domain.contracts import (
 )
 from devbrief.domain.errors import DevBriefError
 from devbrief.domain.tools import PolicyGate, ToolRegistry
+from devbrief.domain.trace_integrity import verify_trace_integrity
 from devbrief.integration.github import GitHubIssueClient, GitHubIssueProvider
 from devbrief.integration.media import MediaError, OpenAICompatibleMediaClient
 from devbrief.integration.repository import WorkspaceRepositoryEvidence
@@ -680,17 +681,19 @@ def _public_result(record: _Record) -> dict[str, object]:
     result = record.result.model_dump(mode="json")
     result["execution_plan"] = record.plan.model_dump(mode="json")
     result["plan_hash"] = compute_plan_hash(record.plan)
+    traces = record.application.harness.traces.list_for(record.result.trace_id)
+    checkpoints = record.application.harness.checkpoints.list_for(
+        record.result.session_id
+    )
+    integrity = verify_trace_integrity(traces, checkpoints=checkpoints)
     result["trace_summary"] = {
         "trace_id": record.result.trace_id,
-        "spans": len(
-            record.application.harness.traces.list_for(record.result.trace_id)
-        ),
+        "spans": len(traces),
+        "integrity_status": integrity.status.value,
+        "integrity_mismatches": integrity.mismatches,
+        "anchored_checkpoints": integrity.anchored_checkpoint_count,
     }
-    result["checkpoint_summary"] = {
-        "count": len(
-            record.application.harness.checkpoints.list_for(record.result.session_id)
-        )
-    }
+    result["checkpoint_summary"] = {"count": len(checkpoints)}
     return result
 
 

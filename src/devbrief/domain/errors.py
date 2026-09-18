@@ -14,6 +14,7 @@ class ErrorCode(StrEnum):
     COST_EXHAUSTED = "cost_exhausted"
     CANCELLED = "cancelled"
     CHECKPOINT_UNAVAILABLE = "checkpoint_unavailable"
+    TRACE_INTEGRITY_FAILED = "trace_integrity_failed"
     UNKNOWN_OUTCOME = "unknown_outcome"
     CONFLICT = "conflict"
     TRANSIENT_PROVIDER_ERROR = "transient_provider_error"

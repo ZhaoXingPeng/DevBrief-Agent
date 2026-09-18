@@ -19,7 +19,7 @@
 
 DevBrief 是一个面向研发决策的证据驱动 Agent Harness。它接收版本化、脱敏的 Bug
 Triage fixture，经过分析、证据上下文、任务计划、策略和人工审批，生成可审计、可
-回放的本地执行结果。运行时以预算、checkpoint、trace、幂等回执和 query-first
+回放的本地执行结果。运行时以预算、checkpoint、可验证 trace 链、幂等回执和 query-first
 恢复为硬边界。
 
 ## 当前状态
@@ -57,7 +57,7 @@ Triage fixture，经过分析、证据上下文、任务计划、策略和人工
 | Approval | 精确工具/参数/plan hash、过期检查和一次性消费 |
 | Receipts | 幂等键冲突检测、成功回执、未知结果保留和 query-first 恢复 |
 | Persistence | SQLite schema migration、运行历史、审批/回执/trace/checkpoint 持久化与重启重建 |
-| Trace / Replay | 脱敏事件、状态与工具审计、回放和漂移报告 |
+| Trace / Replay | 脱敏事件、SHA-256 因果链、checkpoint seal/锚点、回放和漂移报告 |
 
 ## 架构
 
@@ -81,6 +81,7 @@ python -m pip install -e ".[dev]"
 devbrief run fixtures/transcripts/bug-triage-redacted-v1.json
 devbrief serve --port 8000
 devbrief approve <session_id> --url http://127.0.0.1:8000
+devbrief trace-verify <session_id> --db devbrief.sqlite3
 devbrief evidence README.md
 devbrief draft plan.json
 devbrief eval --check docs/evals/bug-triage-v1-baseline.json
@@ -134,6 +135,11 @@ Web 前端位于 `web/`，使用 Vue 3 + Vite 构建；`devbrief serve` 优先�
 本地构建资源，未构建时回退到内置页面。前端不保存凭据，所有写操作仍由后端审批门禁控制。
 音频上传仅接受不超过 10 MB 的 WAV、MP3、M4A、OGG 或 WebM；服务端会在创建临时文件和
 调用 ASR 前同时校验扩展名、声明 MIME 与文件签名，并在请求结束时删除临时媒体。
+
+`devbrief trace-verify` 只读取 SQLite 中的脱敏审计元数据，输出 `verified`、
+`legacy_unsealed` 或 `invalid` 及固定 mismatch code。新会话以 SHA-256 因果链和
+checkpoint seal/anchor 检测局部 trace 或恢复快照损坏；这不是带密钥的不可篡改日志，拥有
+全部数据库写权限的攻击者仍可重写整条链。完整取舍见 [ADR 0002](docs/adr/0002-trace-integrity-chain.md)。
 
 ## 参与开发
 

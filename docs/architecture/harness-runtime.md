@@ -54,12 +54,19 @@ awaiting_approval -> rejected | expired
 
 Checkpoint 是可恢复运行时状态的最小快照，至少引用：会话 ID、状态、预算消耗、计划哈希、审批 ID、已完成工具调用、幂等键、最后事件和 redacted context 引用。
 
+每条新 trace 同时携带连续 sequence、previous hash 和已脱敏 canonical JSON 的 SHA-256
+hash。checkpoint 在自己的 checkpoint span 写入后记录已验证前缀的 span 数、头 hash，并
+seal 恢复字段本身；这让本地 replay 和 SQLite restart 可以拒绝局部篡改、删除、插入或
+重排的 trace/checkpoint。该机制是无密钥的 tamper-evident 基线，不等同于能抵御特权存储
+写入者的签名审计。
+
 恢复算法必须：
 
 1. 读取最后一个已持久化 checkpoint，验证 Schema 版本和会话所有权。
-2. 对每个已发起的外部写先检查 `ToolReceipt` 或用幂等键查询，不允许盲目重放。
-3. 只从最后一个**安全状态**继续；输入解析失败可重试，审批失效和未知写入结果不可自动越过。
-4. 生成新的 `resume` trace 事件，保留原 trace 作为因果链的一部分。
+2. 验证 trace hash 链与每个 checkpoint anchor；损坏或 unsealed 的活动会话不得恢复。
+3. 对每个已发起的外部写先检查 `ToolReceipt` 或用幂等键查询，不允许盲目重放。
+4. 只从最后一个**安全状态**继续；输入解析失败可重试，审批失效和未知写入结果不可自动越过。
+5. 生成新的 `resume` trace 事件，保留原 trace 作为因果链的一部分。
 
 本项目在 SQLite 本地 Demo 与 PostgreSQL 服务端存储之间保持相同 Repository Port。存储技术不能改变恢复和幂等语义。
 

@@ -31,12 +31,12 @@
 
 | JD 能力域 | 矩阵覆盖 | 当前证据 | 结论 |
 | --- | --- | --- | --- |
-| 规划与执行控制 | HAR、PLAN | E1/E2，123 个自动化测试 | 单 Agent 生命周期和硬预算已验证 |
+| 规划与执行控制 | HAR、PLAN | E1/E2，133 个自动化测试 | 单 Agent 生命周期和硬预算已验证 |
 | 上下文、Memory、RAG | CTX、EVID | E1 | 有界证据和不可信数据隔离已验证；无向量索引/长期记忆 |
 | 工具协议与编排 | TOOL、DISP | E1/E2 | Registry、Schema、Policy、Dispatcher 契约已验证 |
 | Runtime、恢复、幂等 | REC、EXT、WEB | E1/E2 | SQLite 重启、回执重放、query-first 已验证 |
 | Eval、回归、失败归因 | EVAL | E1 | 固定 fake 基线已验证；真实模型质量集尚未建立 |
-| Trace、回放、观测 | TRACE | E1 | 脱敏 trace/checkpoint/replay 已验证；无 OTel/线上告警 |
+| Trace、回放、观测 | TRACE | E1/E2 | 脱敏 trace、hash 链、checkpoint seal/anchor、replay 与 SQLite restart 已验证；无 OTel/线上告警 |
 | 安全与权限 | SEC、APP | E1/E2 | external-write 必须 Policy + 精确审批；无生产身份认证 |
 | 语音/多模态 | MEDIA | E4（受控真实） | 百炼 TTS→ASR 往返成功；样本少，不代表 ASR 质量基线 |
 | 工程交付 | CI、REL | E1 | Python/Web 构建和质量门禁通过；发布流程在本次完成 |
@@ -69,6 +69,7 @@
 | EXT-04 | GitHub sandbox | 最小权限 token 在测试仓库创建一次 Issue 并可按 key 查询 | Issue #57 D3 真实联调记录 | E3 | 通过 | 单仓库/单样本/单网络窗口；不外推生产可靠性 |
 | TRACE-01 | 脱敏/隐私 | trace/checkpoint 不含 token、原始音频、完整私有正文 | `tests/test_trace.py`、`test_receipts.py` | E1 | 通过 | 需 secret scanner 纳入 CI |
 | TRACE-02 | 轨迹回放 | fake replay 比较状态、plan_hash、工具决策和 receipt 引用 | `tests/test_replay.py`、`test_trace_replay.py` | E1 | 通过 | 无跨版本 replay 兼容矩阵 |
+| TRACE-03 | 轨迹完整性 | span 修改、删除、插入、重排，或 checkpoint 状态/seal/anchor 篡改返回固定 mismatch；损坏活动会话不能在 restart 后批准 | `tests/test_trace_integrity.py`、`test_web_flow.py`、`devbrief trace-verify` | E1/E2 | 通过 | 无 HMAC/KMS 或远程不可变日志；特权 SQLite 写入者可重写整链 |
 | REC-01 | SQLite 重启 | awaiting_approval、executing、completed 重启后状态/receipt 正确恢复 | `tests/test_web_flow.py` | E2 | 通过 | 多进程 SQLite 压测待做 |
 | WEB-01 | API 工作流 | `/api/run`→`/api/approve`→`/api/runs` 返回完整公开摘要 | `tests/test_web_flow.py` | E2 | 通过 | 浏览器自动化 smoke 待补 |
 | WEB-02 | 上传安全 | 10 MB 限制、扩展名/MIME/签名校验、临时文件清理 | `tests/test_web_flow.py`、`test_meeting_input.py` | E1/E2 | 通过 | 真实浏览器上传待测 |

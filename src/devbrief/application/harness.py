@@ -9,12 +9,19 @@ from devbrief.domain.contracts import (
     Checkpoint,
     ExecutionBudget,
     SessionState,
+    TraceIntegrityStatus,
     TraceKind,
     TraceSpan,
 )
 from devbrief.domain.errors import DevBriefError, ErrorCode
 from devbrief.domain.state_machine import require_transition
 from devbrief.domain.trace import redact_summary
+from devbrief.domain.trace_integrity import (
+    append_trace_span,
+    seal_checkpoint,
+    trace_anchor,
+    verify_trace_integrity,
+)
 
 Clock = Callable[[], datetime]
 
@@ -36,18 +43,24 @@ class InMemoryCheckpointRepository:
         self._items: dict[str, list[Checkpoint]] = {}
 
     def save(self, checkpoint: Checkpoint) -> None:
-        self._items.setdefault(checkpoint.session_id, []).append(checkpoint)
+        self._items.setdefault(checkpoint.session_id, []).append(
+            checkpoint.model_copy(deep=True)
+        )
 
     def load_latest(self, session_id: str) -> Checkpoint | None:
         checkpoints = self._items.get(session_id, [])
-        return checkpoints[-1] if checkpoints else None
+        return checkpoints[-1].model_copy(deep=True) if checkpoints else None
 
     def list_for(self, session_id: str) -> tuple[Checkpoint, ...]:
-        return tuple(self._items.get(session_id, []))
+        return tuple(
+            item.model_copy(deep=True) for item in self._items.get(session_id, [])
+        )
 
     def restore(self, session_id: str, checkpoints: tuple[Checkpoint, ...]) -> None:
         """Restore validated checkpoints loaded from a durable run store."""
-        self._items[session_id] = list(checkpoints)
+        self._items[session_id] = [
+            checkpoint.model_copy(deep=True) for checkpoint in checkpoints
+        ]
 
 
 class InMemoryTraceStore:
@@ -56,15 +69,37 @@ class InMemoryTraceStore:
     def __init__(self) -> None:
         self._items: dict[str, list[TraceSpan]] = {}
 
-    def append(self, span: TraceSpan) -> None:
-        self._items.setdefault(span.trace_id, []).append(span)
+    def append(self, span: TraceSpan) -> TraceSpan:
+        """Seal a raw span after verifying its existing causal history."""
+        items = self._items.setdefault(span.trace_id, [])
+        try:
+            sealed = append_trace_span(items, span)
+        except ValueError as exc:
+            raise DevBriefError(
+                ErrorCode.TRACE_INTEGRITY_FAILED,
+                "trace cannot accept an unverified span",
+            ) from exc
+        items.append(sealed.model_copy(deep=True))
+        return sealed.model_copy(deep=True)
 
     def list_for(self, trace_id: str) -> tuple[TraceSpan, ...]:
-        return tuple(self._items.get(trace_id, []))
+        return tuple(
+            item.model_copy(deep=True) for item in self._items.get(trace_id, [])
+        )
 
     def restore(self, trace_id: str, spans: tuple[TraceSpan, ...]) -> None:
         """Restore validated spans loaded from a durable run store."""
-        self._items[trace_id] = list(spans)
+        self._items[trace_id] = [span.model_copy(deep=True) for span in spans]
+
+    def anchor_for(self, trace_id: str) -> tuple[int, str | None]:
+        """Return the current verified trace prefix used by a checkpoint."""
+        try:
+            return trace_anchor(self._items.get(trace_id, []))
+        except ValueError as exc:
+            raise DevBriefError(
+                ErrorCode.TRACE_INTEGRITY_FAILED,
+                "trace checkpoint anchor is not verifiable",
+            ) from exc
 
 
 class Harness:
@@ -114,6 +149,20 @@ class Harness:
         if any(item.trace_id != trace_id for item in traces):
             raise DevBriefError(
                 ErrorCode.VALIDATION_ERROR, "restored trace belongs to another trace"
+            )
+        integrity = verify_trace_integrity(traces, checkpoints=checkpoints)
+        if integrity.status is TraceIntegrityStatus.INVALID or (
+            integrity.status is TraceIntegrityStatus.LEGACY_UNSEALED
+            and not state.is_terminal
+        ):
+            raise DevBriefError(
+                ErrorCode.TRACE_INTEGRITY_FAILED,
+                "stored trace integrity validation failed",
+            )
+        if not checkpoints and not state.is_terminal:
+            raise DevBriefError(
+                ErrorCode.TRACE_INTEGRITY_FAILED,
+                "active session has no checkpoint anchor",
             )
         session = Session(
             session_id=session_id,
@@ -310,7 +359,7 @@ class Harness:
     def append_trace(self, span: TraceSpan) -> None:
         """Mirror a validated policy span into the session trace."""
         session = self.get_session(span.session_id)
-        if span.trace_id != session.trace_id:
+        if span.trace_id != session.trace_id or span.session_id != session.session_id:
             raise DevBriefError(
                 ErrorCode.POLICY_DENIED, "trace does not belong to session"
             )
@@ -419,8 +468,16 @@ class Harness:
         idempotency_keys: list[str] | None = None,
     ) -> None:
         self._checkpoint_counter += 1
+        checkpoint_id = f"chk_{session.session_id}_{self._checkpoint_counter}"
+        self._append_trace(
+            session,
+            TraceKind.CHECKPOINT,
+            input_summary="checkpoint metadata",
+            output_summary=f"checkpoint={checkpoint_id}",
+        )
+        trace_span_count, trace_head_hash = self.traces.anchor_for(session.trace_id)
         checkpoint = Checkpoint(
-            checkpoint_id=f"chk_{session.session_id}_{self._checkpoint_counter}",
+            checkpoint_id=checkpoint_id,
             session_id=session.session_id,
             state=session.state,
             budget_summary=session.budget,
@@ -428,15 +485,11 @@ class Harness:
             approval_id=approval_id,
             idempotency_keys=idempotency_keys or [],
             last_event_id=f"spn_{session.session_id}_{self._span_counter}",
+            trace_span_count=trace_span_count,
+            trace_head_hash=trace_head_hash,
             created_at=self._now(),
         )
-        self.checkpoints.save(checkpoint)
-        self._append_trace(
-            session,
-            TraceKind.CHECKPOINT,
-            input_summary="checkpoint metadata",
-            output_summary=f"checkpoint={checkpoint.checkpoint_id}",
-        )
+        self.checkpoints.save(seal_checkpoint(checkpoint))
 
     def _trace_state(
         self,

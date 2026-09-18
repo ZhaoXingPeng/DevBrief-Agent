@@ -163,7 +163,7 @@
 | 状态恢复和 `unknown_outcome` 语义 | 中断/超时/失败安全 | fake provider 已覆盖；真实 provider query 需独立实现 |
 | 固定 Eval 和 trace 要求 | 评测、可观测、回归 | Eval runner、trace/replay 已实现；线上指标待补 |
 | Port/Adapter 分层 | Provider 可替换、工程化 | GitHub、百炼、仓库、任务系统 adapter 已实现 |
-| 单 Agent Harness、预算、checkpoint 和回放 | Runtime、长程执行、恢复、Harness | 已实现并接入 Web/SQLite |
+| 单 Agent Harness、预算、checkpoint 和回放 | Runtime、长程执行、恢复、Harness | 已实现并接入 Web/SQLite；新 trace 以 hash 链和 checkpoint anchor 验证局部损坏 |
 
 ### 7.3 需用代码补齐的优先级
 

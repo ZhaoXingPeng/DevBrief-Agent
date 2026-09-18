@@ -90,6 +90,10 @@ Checkpoint
   completed_tool_call_ids[]
   idempotency_keys[]
   last_event_id
+  trace_span_count (optional for legacy records)
+  trace_head_hash (optional for legacy records)
+  checkpoint_integrity_version (optional for legacy records)
+  checkpoint_integrity_hash (optional for legacy records)
   redacted_context_refs[]
   created_at
 
@@ -107,13 +111,29 @@ TraceSpan
   tool_name (optional)
   tool_decision (optional)
   receipt_id (optional)
+  integrity_version (optional for legacy records)
+  sequence (optional for legacy records)
+  previous_hash (optional for the first span)
+  integrity_hash (optional for legacy records)
 ```
 
 - Checkpoint 只保存恢复所需的最小、脱敏数据；不保存 token、原始音频、完整私有转写或完整第三方正文。
 - `ToolReceipt` 写入成功或 `unknown_outcome` 前必须先于后续外部写形成 checkpoint。
 - Replayer 只能在 fake 或明确标记的 sandbox 环境运行；它按因果顺序比较状态、计划哈希、工具决策和回执引用，不能向真实系统重放副作用。
 
-回放结果使用 `TraceReplayReport`：包含 `replayable`、最终状态、状态序列、计划哈希、工具决策、回执引用和固定 mismatch code。报告不回显 trace 摘要正文；空 trace、重复 span、跨会话/trace 和状态不连续都必须显式标记。
+新建 Harness trace 使用 `integrity_version=1` 的 SHA-256 因果链：每个 span 的
+`integrity_hash` 覆盖其已脱敏的 canonical JSON、顺序号和前序 hash。checkpoint 在自身
+审计 span 写入后记录 `trace_span_count` 与 `trace_head_hash`，并对 checkpoint 自身的
+状态、预算、审批、回执键和 anchor 写入独立 seal。因此被删除、插入、重排或局部修改的
+span/checkpoint 会在 replay/restore 时给出固定 mismatch code。hash 输入、完整摘要和期望
+hash 不进入报告、API 或错误消息。
+
+这是一条**应用边界内的 tamper-evident 链**，不是带密钥的不可篡改签名：拥有 SQLite
+trace 和 checkpoint 全部写权限的攻击者仍可重算整条链。HMAC/KMS、远程 append-only
+log 和密钥轮换必须通过独立 Design Issue 引入。缺少完整性字段的历史 trace 标记为
+`legacy_unsealed`；它可以被只读 verifier 报告，但活动会话不得从它恢复或继续外部写。
+
+回放结果使用 `TraceReplayReport`：包含 `replayable`、最终状态、状态序列、计划哈希、工具决策、回执引用、完整性状态和固定 mismatch code。报告不回显 trace 摘要正文；空 trace、重复 span、跨会话/trace、状态不连续、hash 链或 checkpoint 锚点失配都必须显式标记。
 
 离线评测使用版本化 `EvalSample`（`sample_id`、`sample_version`、期望候选和实际候选），报告使用 `EvalReport`（样本/模型/提示词版本、候选 Precision/Recall/F1、字段准确率、证据覆盖和失败计数）。Runner 只比较结构化字段和候选 ID，不把候选正文或转写复制到报告；样本版本混用和重复样本 ID 必须拒绝。
 
@@ -252,7 +272,7 @@ provider 结果先保存为 `ToolReceipt`，再追加结果 trace/checkpoint。�
 
 ## 10. 错误分类
 
-错误至少区分：`validation_error`、`policy_denied`、`tool_not_allowed`、`approval_required`、`approval_expired`、`auth_error`、`rate_limited`、`transient_provider_error`、`conflict`、`unknown_outcome`、`budget_exhausted`、`deadline_exceeded`、`cost_exhausted`、`cancelled`、`checkpoint_unavailable` 和 `internal_error`。
+错误至少区分：`validation_error`、`policy_denied`、`tool_not_allowed`、`approval_required`、`approval_expired`、`auth_error`、`rate_limited`、`transient_provider_error`、`conflict`、`unknown_outcome`、`budget_exhausted`、`deadline_exceeded`、`cost_exhausted`、`cancelled`、`checkpoint_unavailable`、`trace_integrity_failed` 和 `internal_error`。
 
 只有 `transient_provider_error` 可以在明确上限内自动重试。`unknown_outcome` 不得盲目重试，必须先用幂等键或查询工具确认外部对象是否已创建。任何预算或取消错误不得通过自动增加限额绕过。
 
