@@ -20,6 +20,7 @@ from devbrief.application.evaluation import (
     DeterministicEvalService,
     load_eval_artifact,
 )
+from devbrief.application.metrics import RuntimeMetricsService
 from devbrief.application.orchestration import BugTriageApplication
 from devbrief.application.safety_evaluation import (
     DeterministicSafetyEvalService,
@@ -157,6 +158,12 @@ def _main() -> int:
     )
     trace_verify.add_argument("session_id")
     trace_verify.add_argument("--db", default="devbrief.sqlite3", type=Path)
+    metrics = subparsers.add_parser(
+        "metrics",
+        help="aggregate redacted runtime metrics from a SQLite database",
+    )
+    metrics.add_argument("--db", required=True, type=Path)
+    metrics.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.command == "run":
         result = BugTriageApplication().run(
@@ -275,6 +282,15 @@ def _main() -> int:
         report = _stored_trace_integrity_report(args.db, args.session_id)
         print(report.model_dump_json(indent=2))
         return 0 if report.status is TraceIntegrityStatus.VERIFIED else 2
+    if args.command == "metrics":
+        snapshot = RuntimeMetricsService().collect(args.db)
+        payload = snapshot.model_dump_json(indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8")
+        else:
+            print(payload, end="")
+        return 0
     server = create_server(path=args.db, host=args.host, port=args.port)
     print(f"DevBrief Web Demo: http://{args.host}:{args.port}")
     server.serve_forever()
