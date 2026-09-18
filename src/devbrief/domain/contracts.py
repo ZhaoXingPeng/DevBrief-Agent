@@ -581,6 +581,139 @@ class ExternalWriteOutcome(StrictModel):
     reason: str = Field(min_length=1)
 
 
+class SafetyScenarioKind(StrEnum):
+    EXTERNAL_WRITE_MISSING_APPROVAL = "external_write_missing_approval"
+    EXTERNAL_WRITE_EXPIRED_APPROVAL = "external_write_expired_approval"
+    EXTERNAL_WRITE_SCOPE_MISMATCH = "external_write_scope_mismatch"
+    EXTERNAL_WRITE_PLAN_HASH_TAMPER = "external_write_plan_hash_tamper"
+    EXTERNAL_WRITE_BUDGET_EXHAUSTED = "external_write_budget_exhausted"
+    IDEMPOTENCY_REPLAY = "idempotency_replay"
+    UNKNOWN_OUTCOME_QUERY_FIRST = "unknown_outcome_query_first"
+    TRACE_INTEGRITY_RECOVERY_DENIED = "trace_integrity_recovery_denied"
+
+
+class SafetyMismatchCode(StrEnum):
+    ALLOWED_MISMATCH = "allowed_mismatch"
+    ERROR_CODE_MISMATCH = "error_code_mismatch"
+    PROVIDER_CREATE_CALLS_MISMATCH = "provider_create_calls_mismatch"
+    PROVIDER_QUERY_CALLS_MISMATCH = "provider_query_calls_mismatch"
+    RECEIPT_STATUS_MISMATCH = "receipt_status_mismatch"
+
+
+class SafetyScenarioExpectation(StrictModel):
+    """Fixed, source-free assertions for one fake Harness safety scenario."""
+
+    allowed: bool
+    error_code: ErrorCode | None = None
+    provider_create_calls: int = Field(ge=0)
+    provider_query_calls: int = Field(ge=0)
+    receipt_status: ToolReceiptStatus | None = None
+
+    @model_validator(mode="after")
+    def _require_error_code_for_denial(self) -> Self:
+        if self.allowed and self.error_code is not None:
+            raise ValueError("allowed safety scenarios cannot carry an error code")
+        if not self.allowed and self.error_code is None:
+            raise ValueError("denied safety scenarios require an error code")
+        return self
+
+
+class SafetyEvalScenario(StrictModel):
+    """One allowlisted scenario declaration; it cannot contain executable input."""
+
+    scenario_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    scenario_version: str = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    )
+    kind: SafetyScenarioKind
+    expected: SafetyScenarioExpectation
+
+
+class SafetyEvalDataset(StrictModel):
+    """Versioned, no-credential declarations for fixed Harness safety drills."""
+
+    dataset_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    dataset_version: str = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+    )
+    scenarios: list[SafetyEvalScenario] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _require_unique_ids_and_one_scenario_version(self) -> Self:
+        scenario_ids = [item.scenario_id for item in self.scenarios]
+        if len(scenario_ids) != len(set(scenario_ids)):
+            raise ValueError("safety scenario ids must be unique")
+        versions = {item.scenario_version for item in self.scenarios}
+        if len(versions) != 1:
+            raise ValueError("safety scenarios must use one scenario version")
+        return self
+
+
+class SafetyScenarioResult(StrictModel):
+    """Redacted result containing only an ID, stable error enum and mismatch codes."""
+
+    scenario_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    passed: bool
+    observed_error_code: ErrorCode | None = None
+    mismatch_codes: list[SafetyMismatchCode] = Field(
+        default_factory=lambda: list[SafetyMismatchCode]()
+    )
+
+    @model_validator(mode="after")
+    def _require_consistent_mismatches(self) -> Self:
+        if len(self.mismatch_codes) != len(set(self.mismatch_codes)):
+            raise ValueError("safety mismatch codes must be unique per scenario")
+        if self.passed and self.mismatch_codes:
+            raise ValueError("passing safety scenarios cannot contain mismatches")
+        if not self.passed and not self.mismatch_codes:
+            raise ValueError("failing safety scenarios require mismatch codes")
+        return self
+
+
+class SafetyEvalReport(StrictModel):
+    """Aggregate safety evidence without plan, receipt or trace source content."""
+
+    scenario_version: str = Field(min_length=1)
+    scenario_count: int = Field(gt=0)
+    passed_count: int = Field(ge=0)
+    failed_count: int = Field(ge=0)
+    failure_counts: dict[SafetyMismatchCode, int] = Field(
+        default_factory=lambda: dict[SafetyMismatchCode, int]()
+    )
+    results: list[SafetyScenarioResult] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _require_consistent_results(self) -> Self:
+        if len(self.results) != self.scenario_count:
+            raise ValueError("safety result count must match scenario count")
+        scenario_ids = [item.scenario_id for item in self.results]
+        if len(scenario_ids) != len(set(scenario_ids)):
+            raise ValueError("safety result ids must be unique")
+        passed_count = sum(item.passed for item in self.results)
+        if passed_count != self.passed_count:
+            raise ValueError("safety passed count is inconsistent")
+        if self.failed_count != self.scenario_count - passed_count:
+            raise ValueError("safety failed count is inconsistent")
+        if any(count < 0 for count in self.failure_counts.values()):
+            raise ValueError("safety failure counts must be non-negative")
+        observed_counts: dict[SafetyMismatchCode, int] = {}
+        for result in self.results:
+            for code in result.mismatch_codes:
+                observed_counts[code] = observed_counts.get(code, 0) + 1
+        if self.failure_counts != observed_counts:
+            raise ValueError("safety failure counts must match scenario mismatches")
+        return self
+
+
+class SafetyEvalArtifact(StrictModel):
+    """Versioned, aggregate-only output from the deterministic safety runner."""
+
+    dataset_id: str = Field(min_length=1)
+    dataset_version: str = Field(min_length=1)
+    runner_version: str = Field(min_length=1)
+    report: SafetyEvalReport
+
+
 class Plan(StrictModel):
     title: str = Field(min_length=1)
     body: str = Field(min_length=1)

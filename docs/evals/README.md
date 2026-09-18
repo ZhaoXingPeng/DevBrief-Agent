@@ -27,6 +27,31 @@ devbrief eval --output docs/evals/<dataset>-baseline.json
 fake 路径，不能外推为真实 LLM、ASR、GitHub 或生产环境的质量/时延/成本结果。真实实验
 必须依照[实验记录规范](../standards/experiment-records.md)单独留痕。
 
+## Harness safety eval
+
+`harness-safety-v1.json` 是针对固定、封闭 Harness 场景的版本化安全回归数据集。它不接受
+自定义代码、URL、Prompt 或工具参数：每个 kind 只由受信任 runner 映射到隔离的 in-memory
+Harness、Policy、Approval、receipt repository 和 fake provider。
+
+```bash
+devbrief safety-eval --check docs/evals/harness-safety-v1-baseline.json
+```
+
+当前 v1 覆盖 8 个场景：缺失/过期 approval、scope/hash 篡改、工具预算耗尽、幂等重放、
+unknown outcome 的 query-first 和损坏 trace 的恢复拒绝。artifact 仅包含 dataset/runner
+版本、scenario ID、pass/fail、稳定 error/mismatch code 与聚合计数；不包含 Plan body、
+ToolRequest 参数、审批人、receipt URL、provider ID 或 trace 正文。
+
+要审阅候选结果或在独立 Issue 中更新安全基线：
+
+```bash
+devbrief safety-eval --output docs/evals/<dataset>-baseline.json
+```
+
+`--check` 对完整 aggregate artifact 做严格比较，非法 baseline 或差异返回退出码 `2`，不会
+静默更新。此回归只证明当前无凭据 fake Harness 的不变量，不能替代真实 Provider、GitHub
+sandbox、生产身份认证或人工红队实验。
+
 ## Runtime benchmark
 
 运行时基准与候选质量 Eval 分开输出。它重复执行公开、合成、`redacted=true` 的

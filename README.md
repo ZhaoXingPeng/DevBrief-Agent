@@ -59,6 +59,7 @@ Triage fixture，经过分析、证据上下文、任务计划、策略和人工
 | Persistence | SQLite schema migration、运行历史、审批/回执/trace/checkpoint 持久化与重启重建 |
 | Trace / Replay | 脱敏事件、SHA-256 因果链、checkpoint seal/锚点、回放和漂移报告 |
 | Benchmark | 版本化、脱敏的 deterministic Bug Triage 重复运行，p50/p95、状态/错误与预算聚合 |
+| Safety Eval | 版本化 Harness 安全场景，验证写入拒绝、幂等、query-first 与损坏恢复边界 |
 
 ## 架构
 
@@ -86,6 +87,7 @@ devbrief trace-verify <session_id> --db devbrief.sqlite3
 devbrief evidence README.md
 devbrief draft plan.json
 devbrief eval --check docs/evals/bug-triage-v1-baseline.json
+devbrief safety-eval --check docs/evals/harness-safety-v1-baseline.json
 devbrief benchmark --iterations 30 --warmup 3 --output benchmark.json
 pytest
 ruff format --check .
@@ -125,7 +127,7 @@ devbrief speak "准备提交任务" --output briefing.wav
 - [x] Phase 1：无凭据 Harness、fixture、分析、计划、策略、审批、回执、回放和 fake external-write。
 - [x] Phase 2：SQLite、GitHub Issues、仓库范围校验、审批 UI 和任务 draft API。
 - [x] Phase 3：真实 GitHub/百炼 provider、dry-run、凭据边界和失败恢复入口。
-- [x] Phase 4：版本化 Eval/benchmark artifact、GitHub Actions CI、可观测 trace/checkpoint 摘要。
+- [x] Phase 4：版本化质量/安全 Eval 与 benchmark artifact、GitHub Actions CI、可观测 trace/checkpoint 摘要。
 - [x] Phase 5：音频上传、ASR 脱敏 fixture、TTS 播放和实时体验实验入口。
 - [ ] 后续：生产鉴权、限流、多租户、实时流式 ASR 和更完整的仓库证据索引。
 
@@ -142,6 +144,12 @@ Web 前端位于 `web/`，使用 Vue 3 + Vite 构建；`devbrief serve` 优先�
 `legacy_unsealed` 或 `invalid` 及固定 mismatch code。新会话以 SHA-256 因果链和
 checkpoint seal/anchor 检测局部 trace 或恢复快照损坏；这不是带密钥的不可篡改日志，拥有
 全部数据库写权限的攻击者仍可重写整条链。完整取舍见 [ADR 0002](docs/adr/0002-trace-integrity-chain.md)。
+
+`devbrief safety-eval` 运行版本化、无凭据的 Harness 安全场景，验证未批准/过期/scope/hash
+篡改/预算耗尽不会触发 fake provider 写入，幂等重放只写一次，unknown outcome 只 query-first，
+以及损坏 trace 无法恢复。artifact 仅保留 scenario ID、pass/fail 和固定错误/mismatch code，
+不保存计划、请求、receipt、trace 原文或 Provider 标识；它不是真实 Provider、GitHub sandbox
+或生产红队证据。完整口径见 [Bug Triage Eval 基线](docs/evals/README.md) 和 [Agent 契约](docs/standards/agent-contracts.md)。
 
 `devbrief benchmark` 在公开、合成、已脱敏 fixture 上重复执行无凭据的 deterministic
 Bug Triage 路径，并输出只含 fixture digest、p50/p95/min/max wall time、状态/错误分布和
