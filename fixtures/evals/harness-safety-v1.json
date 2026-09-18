@@ -1,0 +1,102 @@
+{
+  "dataset_id": "harness-safety-fake",
+  "dataset_version": "1.0.0",
+  "scenarios": [
+    {
+      "scenario_id": "external_write_missing_approval",
+      "scenario_version": "1.0.0",
+      "kind": "external_write_missing_approval",
+      "expected": {
+        "allowed": false,
+        "error_code": "approval_required",
+        "provider_create_calls": 0,
+        "provider_query_calls": 0,
+        "receipt_status": null
+      }
+    },
+    {
+      "scenario_id": "external_write_expired_approval",
+      "scenario_version": "1.0.0",
+      "kind": "external_write_expired_approval",
+      "expected": {
+        "allowed": false,
+        "error_code": "approval_expired",
+        "provider_create_calls": 0,
+        "provider_query_calls": 0,
+        "receipt_status": null
+      }
+    },
+    {
+      "scenario_id": "external_write_scope_mismatch",
+      "scenario_version": "1.0.0",
+      "kind": "external_write_scope_mismatch",
+      "expected": {
+        "allowed": false,
+        "error_code": "tool_not_allowed",
+        "provider_create_calls": 0,
+        "provider_query_calls": 0,
+        "receipt_status": null
+      }
+    },
+    {
+      "scenario_id": "external_write_plan_hash_tamper",
+      "scenario_version": "1.0.0",
+      "kind": "external_write_plan_hash_tamper",
+      "expected": {
+        "allowed": false,
+        "error_code": "validation_error",
+        "provider_create_calls": 0,
+        "provider_query_calls": 0,
+        "receipt_status": null
+      }
+    },
+    {
+      "scenario_id": "external_write_budget_exhausted",
+      "scenario_version": "1.0.0",
+      "kind": "external_write_budget_exhausted",
+      "expected": {
+        "allowed": false,
+        "error_code": "budget_exhausted",
+        "provider_create_calls": 0,
+        "provider_query_calls": 0,
+        "receipt_status": null
+      }
+    },
+    {
+      "scenario_id": "idempotency_replay",
+      "scenario_version": "1.0.0",
+      "kind": "idempotency_replay",
+      "expected": {
+        "allowed": true,
+        "error_code": null,
+        "provider_create_calls": 1,
+        "provider_query_calls": 0,
+        "receipt_status": "succeeded"
+      }
+    },
+    {
+      "scenario_id": "unknown_outcome_query_first",
+      "scenario_version": "1.0.0",
+      "kind": "unknown_outcome_query_first",
+      "expected": {
+        "allowed": true,
+        "error_code": null,
+        "provider_create_calls": 1,
+        "provider_query_calls": 1,
+        "receipt_status": "unknown_outcome"
+      }
+    },
+    {
+      "scenario_id": "trace_integrity_recovery_denied",
+      "scenario_version": "1.0.0",
+      "kind": "trace_integrity_recovery_denied",
+      "expected": {
+        "allowed": false,
+        "error_code": "trace_integrity_failed",
+        "provider_create_calls": 0,
+        "provider_query_calls": 0,
+        "receipt_status": null
+      }
+    }
+  ]
+}

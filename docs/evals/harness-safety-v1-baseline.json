@@ -1,0 +1,62 @@
+{
+  "dataset_id": "harness-safety-fake",
+  "dataset_version": "1.0.0",
+  "runner_version": "safety-harness-runner-1.0.0",
+  "report": {
+    "scenario_version": "1.0.0",
+    "scenario_count": 8,
+    "passed_count": 8,
+    "failed_count": 0,
+    "failure_counts": {},
+    "results": [
+      {
+        "scenario_id": "external_write_missing_approval",
+        "passed": true,
+        "observed_error_code": "approval_required",
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "external_write_expired_approval",
+        "passed": true,
+        "observed_error_code": "approval_expired",
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "external_write_scope_mismatch",
+        "passed": true,
+        "observed_error_code": "tool_not_allowed",
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "external_write_plan_hash_tamper",
+        "passed": true,
+        "observed_error_code": "validation_error",
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "external_write_budget_exhausted",
+        "passed": true,
+        "observed_error_code": "budget_exhausted",
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "idempotency_replay",
+        "passed": true,
+        "observed_error_code": null,
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "unknown_outcome_query_first",
+        "passed": true,
+        "observed_error_code": null,
+        "mismatch_codes": []
+      },
+      {
+        "scenario_id": "trace_integrity_recovery_denied",
+        "passed": true,
+        "observed_error_code": "trace_integrity_failed",
+        "mismatch_codes": []
+      }
+    ]
+  }
+}

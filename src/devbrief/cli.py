@@ -21,6 +21,10 @@ from devbrief.application.evaluation import (
     load_eval_artifact,
 )
 from devbrief.application.orchestration import BugTriageApplication
+from devbrief.application.safety_evaluation import (
+    DeterministicSafetyEvalService,
+    load_safety_eval_artifact,
+)
 from devbrief.domain.contracts import (
     Checkpoint,
     ExecutionBudget,
@@ -101,6 +105,21 @@ def _main() -> int:
     evaluation_output = evaluation.add_mutually_exclusive_group()
     evaluation_output.add_argument("--output", type=Path)
     evaluation_output.add_argument(
+        "--check", type=Path, help="fail when the result differs from a baseline"
+    )
+    safety_evaluation = subparsers.add_parser(
+        "safety-eval",
+        help="run versioned deterministic Harness safety scenarios",
+    )
+    safety_evaluation.add_argument(
+        "--dataset",
+        type=Path,
+        default=Path("fixtures/evals/harness-safety-v1.json"),
+        help="versioned no-credential safety scenario dataset",
+    )
+    safety_evaluation_output = safety_evaluation.add_mutually_exclusive_group()
+    safety_evaluation_output.add_argument("--output", type=Path)
+    safety_evaluation_output.add_argument(
         "--check", type=Path, help="fail when the result differs from a baseline"
     )
     benchmark = subparsers.add_parser(
@@ -208,6 +227,22 @@ def _main() -> int:
                 raise DevBriefError(
                     ErrorCode.CONFLICT,
                     "evaluation report does not match the committed baseline",
+                )
+        payload = artifact.model_dump_json(indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(payload, encoding="utf-8")
+        else:
+            print(payload, end="")
+        return 0
+    if args.command == "safety-eval":
+        artifact = DeterministicSafetyEvalService().run(args.dataset)
+        if args.check:
+            expected = load_safety_eval_artifact(args.check)
+            if artifact != expected:
+                raise DevBriefError(
+                    ErrorCode.CONFLICT,
+                    "safety evaluation report does not match the committed baseline",
                 )
         payload = artifact.model_dump_json(indent=2) + "\n"
         if args.output:

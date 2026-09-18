@@ -1,12 +1,14 @@
 # DevBrief Agent 完整评测矩阵
 
-**版本：** 1.1
+**版本：** 1.2
 **评测日期：** 2026-09-11（Asia/Hong_Kong）  
 **被测提交：** `1f6bd3907652901f8ea86d0947d5704d632c9dd5`  
 **范围：** 单 Agent Harness、Bug Triage 工作流、工具/审批/回执、SQLite/Web、百炼 ASR/TTS 适配器。  
 **不包含：** 生产鉴权、多租户、实时流式 ASR、多 Agent、模型训练、自动代码修改和 PR 合并。
 
 **PERF-01 更新：** 2026-09-18（Asia/Hong_Kong），实现与 D2 fake 证据见 [Issue #84](https://github.com/ZhaoXingPeng/DevBrief-Agent/issues/84)。本次只新增无凭据 deterministic runner 的指标口径和回归测试，不将本机测量写成真实 Provider 或生产基线。
+
+**SEC-01 更新：** 2026-09-18（Asia/Hong_Kong），实现与 D2 fake 证据见 [Issue #86](https://github.com/ZhaoXingPeng/DevBrief-Agent/issues/86)。本次将已有 Policy、Approval、receipt 和 trace-integration 不变量收敛为版本化 fake safety eval，不将它表述为真实 Provider 或生产红队结果。
 
 ## 1. 评测方法基线
 
@@ -37,7 +39,7 @@
 | 上下文、Memory、RAG | CTX、EVID | E1 | 有界证据和不可信数据隔离已验证；无向量索引/长期记忆 |
 | 工具协议与编排 | TOOL、DISP | E1/E2 | Registry、Schema、Policy、Dispatcher 契约已验证 |
 | Runtime、恢复、幂等 | REC、EXT、WEB | E1/E2 | SQLite 重启、回执重放、query-first 已验证 |
-| Eval、回归、失败归因 | EVAL、PERF | E1/E2 | 固定 fake Eval 与 runtime benchmark artifact 已验证；真实模型质量集和 Provider 性能实验尚未建立 |
+| Eval、回归、失败归因 | EVAL、PERF、SEC | E1/E2 | 固定 fake Eval、runtime benchmark 与 Harness safety artifact 已验证；真实模型质量集、Provider 性能和安全实验尚未建立 |
 | Trace、回放、观测 | TRACE | E1/E2 | 脱敏 trace、hash 链、checkpoint seal/anchor、replay 与 SQLite restart 已验证；无 OTel/线上告警 |
 | 安全与权限 | SEC、APP | E1/E2 | external-write 必须 Policy + 精确审批；无生产身份认证 |
 | 语音/多模态 | MEDIA | E4（受控真实） | 百炼 TTS→ASR 往返成功；样本少，不代表 ASR 质量基线 |
@@ -62,6 +64,7 @@
 | EVID-01 | 证据边界 | 工作区路径受限，返回 hash/`repo://` 摘要，敏感值脱敏 | `tests/test_repository_and_task_system.py`、`test_web_flow.py` | E1/E2 | 通过 | symlink/网络文件系统需补测 |
 | TOOL-01 | BFCL 风格工具选择 | 只允许 canonical registry，Schema 错误不调用 handler | `tests/test_tools.py`、`test_dispatcher.py` | E1 | 通过 | 增加工具参数组合生成测试 |
 | TOOL-02 | Policy | prohibited/越权/预算耗尽返回结构化拒绝且留下 trace | `tests/test_tools_policy.py`、`test_dispatcher.py` | E1 | 通过 | 生产用户授权未实现 |
+| SEC-01 | Harness 安全回归 | 8 个固定场景检查拒绝写入、预算、idempotency、query-first 与损坏 trace 恢复；artifact 只含安全聚合 | `tests/test_safety_eval.py`、`devbrief safety-eval --check docs/evals/harness-safety-v1-baseline.json` | E1/E2 | 通过 | 仅无凭据 fake 路径；真实 Provider/GitHub sandbox 红队独立记录 |
 | APP-01 | 审批门禁 | 无 approval 或 scope 不匹配时 provider 调用次数为 0 | `tests/test_approval.py`、`test_external_write.py` | E1/E2 | 通过 | 无 |
 | APP-02 | 审批生命周期 | rejected/expired/consumed 不可再次执行 | `tests/test_approval.py`、`test_external_write.py` | E1 | 通过 | 跨进程消费锁待补 |
 | APP-03 | 计划篡改 | 修改参数、仓库或 plan_hash 后旧 approval 被拒绝 | `tests/test_approval.py`、`test_external_write.py` | E1 | 通过 | 无 |
@@ -87,17 +90,18 @@
 
 - **契约门槛：** CON/HAR/TOOL/APP/TRACE/REC 必须全通过；任何越权写、审批绕过或脱敏失败为阻断项。
 - **离线质量门槛：** 当前 fake 基线 `sample_count=2`，candidate Precision/Recall/F1、字段准确率和证据覆盖均为 `1.0`；该数值只适用于 `bug-triage-fake-baseline@1.0.0`。
+- **fake 安全门槛：** `harness-safety-fake@1.0.0` 的 8 个固定场景必须全部通过，artifact 只含受控枚举/计数；任何 provider create=0 拒绝场景、idempotency/query-first 或 trace 恢复回归均为阻断项。
 - **fake runtime benchmark 门槛：** 公开脱敏 fixture 的 artifact 必须有完整 p50/p95/min/max、状态/错误和预算聚合；可选 p95 gate 只能比较调用者显式给出的本机阈值，不能升级为生产 SLO。
 - **真实语音门槛：** TTS 和 ASR 均返回可解析结果，fixture `redacted=true`，并清理临时文件；不以单句结果推导 WER 或生产可用性。
 - **发布门槛：** Python 质量门禁、Web 构建、Markdown 链接和 Eval check 全通过；Release artifact 可下载并用 SHA256 校验。
 
 ## 5. 当前结论与缺口
 
-项目已经符合 Agent Harness/AI Testing 岗位对“单 Agent 运行时、受控工具、审批、恢复、Eval、trace、runtime benchmark 和工程交付”的 MVP 证据要求。它还不符合生产级 Agent 平台的完整要求：没有生产鉴权/多租户/限流、OTel 线上指标、较大真实 ASR/LLM 标注集、真实 Provider 或跨机器 p95 成本/时延基线、实时流式语音或多 Agent 对照实验。GitHub sandbox 已有 E3 单样本证据，但不代表生产可靠性。
+项目已经符合 Agent Harness/AI Testing 岗位对“单 Agent 运行时、受控工具、审批、恢复、质量/安全 Eval、trace、runtime benchmark 和工程交付”的 MVP 证据要求。它还不符合生产级 Agent 平台的完整要求：没有生产鉴权/多租户/限流、OTel 线上指标、较大真实 ASR/LLM 标注集、真实 Provider 或跨机器 p95 成本/时延基线、真实安全红队、实时流式语音或多 Agent 对照实验。GitHub sandbox 已有 E3 单样本证据，但不代表生产可靠性。
 
 下一轮应按优先级补齐：
 
 1. 建立 50+ 条脱敏标注集和真实模型对照，报告字段错误与失败类别。
 2. 扩展 GitHub sandbox 样本，演练超时、重复提交和 query-first 恢复。
-3. 在独立实验记录中扩展真实 Provider/跨机器时延、成本和失败分布，不能复用 fake 结果。
+3. 在独立实验记录中扩展真实 Provider/跨机器时延、成本、失败分布和受控安全演练，不能复用 fake 结果。
 4. 接入 OTel/指标与生产鉴权前，不能宣称“生产级”或“支持多租户”。

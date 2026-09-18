@@ -331,3 +331,42 @@ BenchmarkReport
   以 `validation_error` 拒绝。
 - 可选 `--max-p95-ms` 仅是调用者当前环境的门禁。它不能被表述为跨机器、真实 Provider 或
   生产 SLO；门禁失败时 CLI 仍先保留 artifact，再返回稳定的非零状态。
+
+## 13. Harness Safety Eval
+
+`devbrief safety-eval` 是独立于候选质量 Eval 和 runtime benchmark 的 fake-only 安全回归
+路径。`SafetyEvalDataset` 使用版本化 `dataset_id` / `dataset_version` 和至少一个
+`SafetyEvalScenario`；scenario 只有 `scenario_id`、统一的 `scenario_version`、封闭的
+`SafetyScenarioKind` 与结构化期望：
+
+```text
+SafetyScenarioExpectation
+  allowed
+  error_code (fixed ErrorCode or null)
+  provider_create_calls / provider_query_calls
+  receipt_status (or null)
+
+SafetyEvalArtifact
+  dataset_id / dataset_version / runner_version
+  report: scenario_version, scenario_count, passed_count, failed_count,
+          failure_counts, results[]
+
+SafetyScenarioResult
+  scenario_id / passed / observed_error_code / mismatch_codes[]
+```
+
+- kind 只能是已注册的缺失/过期/scope/hash/预算拒绝、idempotency replay、unknown outcome
+  query-first 或 trace integrity recovery 场景。dataset 不能携带 Python、shell、网络地址、
+  Prompt、Plan、ToolRequest 或任意 provider 配置；未知 kind、重复 scenario ID、版本混用和
+  extra field 必须在创建 Harness 或 fake provider 前以 `validation_error` 拒绝。
+- 每轮隔离构造 in-memory Harness、Policy、Approval repository、receipt repository 和
+  fake provider，使用固定时间。拒绝场景通过 `provider_create_calls=0` 断言无写；重放和
+  unknown outcome 场景通过 `create=1` / `query=0|1` 断言一次性写入和 query-first。
+- artifact 不得保存 Plan/arguments、审批人、receipt/provider URL/ID、trace/checkpoint 原文、
+  token、凭据、原始转写或机器身份。`SafetyEvalReport` 的 scenario/pass/fail/failure totals 必须
+  与逐项结果和 mismatch code 完全一致。mismatch code 仅限 `allowed_mismatch`、
+  `error_code_mismatch`、`provider_create_calls_mismatch`、
+  `provider_query_calls_mismatch` 与 `receipt_status_mismatch`。
+- `--output` 只能生成候选 aggregate baseline；`--check` 比较完整 artifact，缺失、Schema
+  非法或差异都以 CLI 退出码 `2` 失败。它只证明无凭据 fake 路径，不能作为真实 Provider、
+  GitHub sandbox、生产认证或红队结论。

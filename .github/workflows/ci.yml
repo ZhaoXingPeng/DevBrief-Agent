@@ -18,6 +18,7 @@ jobs:
       - run: python -m compileall -q src
       - run: python tools/check_markdown_links.py
       - run: python -m devbrief.cli eval --check docs/evals/bug-triage-v1-baseline.json
+      - run: python -m devbrief.cli safety-eval --check docs/evals/harness-safety-v1-baseline.json
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
